@@ -3,9 +3,10 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use std::time::Duration;
+
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 use rand_utils::rand_vector;
-use std::time::Duration;
 use winter_math::{fft, fields::f128::BaseElement, polynom, FieldElement};
 
 const SIZES: [usize; 3] = [262_144, 524_288, 1_048_576];
@@ -29,7 +30,7 @@ fn syn_div(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("high_degree", size), |bench| {
             bench.iter_batched_ref(
                 || p.clone(),
-                |mut p| polynom::syn_div(&mut p, z_power, BaseElement::ONE),
+                |p| polynom::syn_div(p, z_power, BaseElement::ONE),
                 BatchSize::LargeInput,
             );
         });

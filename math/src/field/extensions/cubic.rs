@@ -5,15 +5,18 @@
 
 use super::{ExtensibleField, ExtensionOf, FieldElement};
 use crate::StarkField;
+use alloc::string::{String, ToString};
 use core::{
-    convert::TryFrom,
     fmt,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     slice,
 };
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use utils::{
-    collections::Vec, string::ToString, AsBytes, ByteReader, ByteWriter, Deserializable,
-    DeserializationError, Randomizable, Serializable, SliceReader,
+    AsBytes, ByteReader, ByteWriter, Deserializable, DeserializationError, Randomizable,
+    Serializable, SliceReader,
 };
 
 // QUADRATIC EXTENSION FIELD
@@ -30,7 +33,7 @@ pub struct CubeExtension<B: ExtensibleField<3> + StarkField>(B, B, B);
 
 impl<B: ExtensibleField<3> + StarkField> CubeExtension<B> {
     /// Returns a new extension element instantiated from the provided base elements.
-    pub fn new(a: B, b: B, c: B) -> Self {
+    pub const fn new(a: B, b: B, c: B) -> Self {
         Self(a, b, c)
     }
 
@@ -39,20 +42,12 @@ impl<B: ExtensibleField<3> + StarkField> CubeExtension<B> {
         <B as ExtensibleField<3>>::is_supported()
     }
 
-    /// Converts a vector of base elements into a vector of elements in a cubic extension field
-    /// by fusing three adjacent base elements together. The output vector is half the length of
-    /// the source vector.
-    fn base_to_cubic_vector(source: Vec<B>) -> Vec<Self> {
-        debug_assert!(
-            source.len() % 3 == 0,
-            "source vector length must be divisible by three, but was {}",
-            source.len()
-        );
-        let mut v = core::mem::ManuallyDrop::new(source);
-        let p = v.as_mut_ptr();
-        let len = v.len() / 3;
-        let cap = v.capacity() / 3;
-        unsafe { Vec::from_raw_parts(p as *mut Self, len, cap) }
+    /// Returns an array of base field elements comprising this extension field element.
+    ///
+    /// The order of abase elements in the returned array is the same as the order in which
+    /// the elements are provided to the [CubeExtension::new()] constructor.
+    pub const fn to_base_elements(self) -> [B; 3] {
+        [self.0, self.1, self.2]
     }
 }
 
@@ -60,14 +55,25 @@ impl<B: ExtensibleField<3> + StarkField> FieldElement for CubeExtension<B> {
     type PositiveInteger = B::PositiveInteger;
     type BaseField = B;
 
-    const ELEMENT_BYTES: usize = B::ELEMENT_BYTES * 3;
+    const EXTENSION_DEGREE: usize = 3;
+
+    const ELEMENT_BYTES: usize = B::ELEMENT_BYTES * Self::EXTENSION_DEGREE;
     const IS_CANONICAL: bool = B::IS_CANONICAL;
     const ZERO: Self = Self(B::ZERO, B::ZERO, B::ZERO);
     const ONE: Self = Self(B::ONE, B::ZERO, B::ZERO);
 
+    // ALGEBRA
+    // --------------------------------------------------------------------------------------------
+
     #[inline]
     fn double(self) -> Self {
         Self(self.0.double(), self.1.double(), self.2.double())
+    }
+
+    #[inline]
+    fn square(self) -> Self {
+        let a = <B as ExtensibleField<3>>::square([self.0, self.1, self.2]);
+        Self(a[0], a[1], a[2])
     }
 
     #[inline]
@@ -86,11 +92,7 @@ impl<B: ExtensibleField<3> + StarkField> FieldElement for CubeExtension<B> {
         debug_assert_eq!(norm[2], B::ZERO, "norm must be in the base field");
         let denom_inv = norm[0].inv();
 
-        Self(
-            numerator[0] * denom_inv,
-            numerator[1] * denom_inv,
-            numerator[2] * denom_inv,
-        )
+        Self(numerator[0] * denom_inv, numerator[1] * denom_inv, numerator[2] * denom_inv)
     }
 
     #[inline]
@@ -98,6 +100,39 @@ impl<B: ExtensibleField<3> + StarkField> FieldElement for CubeExtension<B> {
         let result = <B as ExtensibleField<3>>::frobenius([self.0, self.1, self.2]);
         Self(result[0], result[1], result[2])
     }
+
+    // BASE ELEMENT CONVERSIONS
+    // --------------------------------------------------------------------------------------------
+
+    fn base_element(&self, i: usize) -> Self::BaseField {
+        match i {
+            0 => self.0,
+            1 => self.1,
+            2 => self.2,
+            _ => panic!("element index must be smaller than 3, but was {i}"),
+        }
+    }
+
+    fn slice_as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
+        let ptr = elements.as_ptr();
+        let len = elements.len() * Self::EXTENSION_DEGREE;
+        unsafe { slice::from_raw_parts(ptr as *const Self::BaseField, len) }
+    }
+
+    fn slice_from_base_elements(elements: &[Self::BaseField]) -> &[Self] {
+        assert!(
+            elements.len().is_multiple_of(Self::EXTENSION_DEGREE),
+            "number of base elements must be divisible by 3, but was {}",
+            elements.len()
+        );
+
+        let ptr = elements.as_ptr();
+        let len = elements.len() / Self::EXTENSION_DEGREE;
+        unsafe { slice::from_raw_parts(ptr as *const Self, len) }
+    }
+
+    // SERIALIZATION / DESERIALIZATION
+    // --------------------------------------------------------------------------------------------
 
     fn elements_as_bytes(elements: &[Self]) -> &[u8] {
         unsafe {
@@ -109,7 +144,7 @@ impl<B: ExtensibleField<3> + StarkField> FieldElement for CubeExtension<B> {
     }
 
     unsafe fn bytes_as_elements(bytes: &[u8]) -> Result<&[Self], DeserializationError> {
-        if bytes.len() % Self::ELEMENT_BYTES != 0 {
+        if !bytes.len().is_multiple_of(Self::ELEMENT_BYTES) {
             return Err(DeserializationError::InvalidValue(format!(
                 "number of bytes ({}) does not divide into whole number of field elements",
                 bytes.len(),
@@ -120,26 +155,13 @@ impl<B: ExtensibleField<3> + StarkField> FieldElement for CubeExtension<B> {
         let len = bytes.len() / Self::ELEMENT_BYTES;
 
         // make sure the bytes are aligned on the boundary consistent with base element alignment
-        if (p as usize) % Self::BaseField::ELEMENT_BYTES != 0 {
+        if !(p as usize).is_multiple_of(Self::BaseField::ELEMENT_BYTES) {
             return Err(DeserializationError::InvalidValue(
                 "slice memory alignment is not valid for this field element type".to_string(),
             ));
         }
 
         Ok(slice::from_raw_parts(p as *const Self, len))
-    }
-
-    fn zeroed_vector(n: usize) -> Vec<Self> {
-        // get three times the number of base elements and re-interpret them as cubic field
-        // elements
-        let result = B::zeroed_vector(n * 3);
-        Self::base_to_cubic_vector(result)
-    }
-
-    fn as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
-        let ptr = elements.as_ptr();
-        let len = elements.len() * 3;
-        unsafe { slice::from_raw_parts(ptr as *const Self::BaseField, len) }
     }
 }
 
@@ -253,18 +275,6 @@ impl<B: ExtensibleField<3> + StarkField> From<B> for CubeExtension<B> {
     }
 }
 
-impl<B: ExtensibleField<3> + StarkField> From<u128> for CubeExtension<B> {
-    fn from(value: u128) -> Self {
-        Self(B::from(value), B::ZERO, B::ZERO)
-    }
-}
-
-impl<B: ExtensibleField<3> + StarkField> From<u64> for CubeExtension<B> {
-    fn from(value: u64) -> Self {
-        Self(B::from(value), B::ZERO, B::ZERO)
-    }
-}
-
 impl<B: ExtensibleField<3> + StarkField> From<u32> for CubeExtension<B> {
     fn from(value: u32) -> Self {
         Self(B::from(value), B::ZERO, B::ZERO)
@@ -283,7 +293,33 @@ impl<B: ExtensibleField<3> + StarkField> From<u8> for CubeExtension<B> {
     }
 }
 
-impl<'a, B: ExtensibleField<3> + StarkField> TryFrom<&'a [u8]> for CubeExtension<B> {
+impl<B: ExtensibleField<3> + StarkField> TryFrom<u64> for CubeExtension<B> {
+    type Error = String;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match B::try_from(value) {
+            Ok(elem) => Ok(Self::from(elem)),
+            Err(_) => Err(format!(
+                "invalid field element: value {value} is greater than or equal to the field modulus"
+            )),
+        }
+    }
+}
+
+impl<B: ExtensibleField<3> + StarkField> TryFrom<u128> for CubeExtension<B> {
+    type Error = String;
+
+    fn try_from(value: u128) -> Result<Self, Self::Error> {
+        match B::try_from(value) {
+            Ok(elem) => Ok(Self::from(elem)),
+            Err(_) => Err(format!(
+                "invalid field element: value {value} is greater than or equal to the field modulus"
+            )),
+        }
+    }
+}
+
+impl<B: ExtensibleField<3> + StarkField> TryFrom<&'_ [u8]> for CubeExtension<B> {
     type Error = DeserializationError;
 
     /// Converts a slice of bytes into a field element; returns error if the value encoded in bytes
@@ -341,9 +377,10 @@ impl<B: ExtensibleField<3> + StarkField> Deserializable for CubeExtension<B> {
 
 #[cfg(test)]
 mod tests {
+    use rand_utils::rand_value;
+
     use super::{CubeExtension, DeserializationError, FieldElement};
     use crate::field::f64::BaseElement;
-    use rand_utils::rand_value;
 
     // BASIC ALGEBRA
     // --------------------------------------------------------------------------------------------
@@ -376,34 +413,14 @@ mod tests {
         assert_eq!(expected, r1 - r2);
     }
 
-    // INITIALIZATION
-    // --------------------------------------------------------------------------------------------
-
-    #[test]
-    fn zeroed_vector() {
-        let result = CubeExtension::<BaseElement>::zeroed_vector(4);
-        assert_eq!(4, result.len());
-        for element in result.into_iter() {
-            assert_eq!(CubeExtension::<BaseElement>::ZERO, element);
-        }
-    }
-
     // SERIALIZATION / DESERIALIZATION
     // --------------------------------------------------------------------------------------------
 
     #[test]
     fn elements_as_bytes() {
         let source = vec![
-            CubeExtension(
-                BaseElement::new(1),
-                BaseElement::new(2),
-                BaseElement::new(3),
-            ),
-            CubeExtension(
-                BaseElement::new(4),
-                BaseElement::new(5),
-                BaseElement::new(6),
-            ),
+            CubeExtension(BaseElement::new(1), BaseElement::new(2), BaseElement::new(3)),
+            CubeExtension(BaseElement::new(4), BaseElement::new(5), BaseElement::new(6)),
         ];
 
         let mut expected = vec![];
@@ -414,25 +431,14 @@ mod tests {
         expected.extend_from_slice(&source[1].1.inner().to_le_bytes());
         expected.extend_from_slice(&source[1].2.inner().to_le_bytes());
 
-        assert_eq!(
-            expected,
-            CubeExtension::<BaseElement>::elements_as_bytes(&source)
-        );
+        assert_eq!(expected, CubeExtension::<BaseElement>::elements_as_bytes(&source));
     }
 
     #[test]
     fn bytes_as_elements() {
         let elements = vec![
-            CubeExtension(
-                BaseElement::new(1),
-                BaseElement::new(2),
-                BaseElement::new(3),
-            ),
-            CubeExtension(
-                BaseElement::new(4),
-                BaseElement::new(5),
-                BaseElement::new(6),
-            ),
+            CubeExtension(BaseElement::new(1), BaseElement::new(2), BaseElement::new(3)),
+            CubeExtension(BaseElement::new(4), BaseElement::new(5), BaseElement::new(6)),
         ];
 
         let mut bytes = vec![];
@@ -461,16 +467,8 @@ mod tests {
     #[test]
     fn as_base_elements() {
         let elements = vec![
-            CubeExtension(
-                BaseElement::new(1),
-                BaseElement::new(2),
-                BaseElement::new(3),
-            ),
-            CubeExtension(
-                BaseElement::new(4),
-                BaseElement::new(5),
-                BaseElement::new(6),
-            ),
+            CubeExtension(BaseElement::new(1), BaseElement::new(2), BaseElement::new(3)),
+            CubeExtension(BaseElement::new(4), BaseElement::new(5), BaseElement::new(6)),
         ];
 
         let expected = vec![
@@ -482,9 +480,6 @@ mod tests {
             BaseElement::new(6),
         ];
 
-        assert_eq!(
-            expected,
-            CubeExtension::<BaseElement>::as_base_elements(&elements)
-        );
+        assert_eq!(expected, CubeExtension::<BaseElement>::slice_as_base_elements(&elements));
     }
 }

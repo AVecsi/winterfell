@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use core::{fmt::Debug, slice};
+
 use math::{FieldElement, StarkField};
 use utils::{ByteReader, Deserializable, DeserializationError, Serializable};
 
@@ -13,15 +14,17 @@ pub use blake::{Blake3_192, Blake3_256};
 mod sha;
 pub use sha::Sha3_256;
 
+mod mds;
+
 mod rescue;
-pub use rescue::{Rp62_248, Rp64_256};
+pub use rescue::{Rp62_248, Rp64_256, RpJive64_256};
 
 // HASHER TRAITS
 // ================================================================================================
 
 /// Defines a cryptographic hash function.
 ///
-/// This trait defined hash procedures for the following inputs:
+/// This trait defines hash procedures for the following inputs:
 /// * A sequence of bytes.
 /// * Two digests - this is intended for use in Merkle tree constructions.
 /// * A digests and a u64 value - this intended for use in PRNG or PoW contexts.
@@ -29,12 +32,18 @@ pub trait Hasher {
     /// Specifies a digest type returned by this hasher.
     type Digest: Digest;
 
+    /// Collision resistance of the hash function measured in bits.
+    const COLLISION_RESISTANCE: u32;
+
     /// Returns a hash of the provided sequence of bytes.
     fn hash(bytes: &[u8]) -> Self::Digest;
 
     /// Returns a hash of two digests. This method is intended for use in construction of
     /// Merkle trees.
     fn merge(values: &[Self::Digest; 2]) -> Self::Digest;
+
+    /// Returns a hash of many digests.
+    fn merge_many(values: &[Self::Digest]) -> Self::Digest;
 
     /// Returns hash(`seed` || `value`). This method is intended for use in PRNG and PoW contexts.
     fn merge_with_int(seed: Self::Digest, value: u64) -> Self::Digest;
@@ -112,13 +121,13 @@ impl<const N: usize> Default for ByteDigest<N> {
 
 impl<const N: usize> Serializable for ByteDigest<N> {
     fn write_into<W: utils::ByteWriter>(&self, target: &mut W) {
-        target.write_u8_slice(&self.0);
+        target.write_bytes(&self.0);
     }
 }
 
 impl<const N: usize> Deserializable for ByteDigest<N> {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Ok(ByteDigest(source.read_u8_array()?))
+        Ok(ByteDigest(source.read_array()?))
     }
 }
 

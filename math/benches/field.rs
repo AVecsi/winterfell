@@ -3,17 +3,17 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use std::{hint::black_box, time::Duration};
+
 use criterion::{
-    black_box, criterion_group, criterion_main,
+    criterion_group, criterion_main,
     measurement::{Measurement, WallTime},
     BatchSize, BenchmarkGroup, BenchmarkId, Criterion,
 };
 use rand_utils::{rand_array, rand_value, rand_vector};
-use std::time::Duration;
 use winter_math::{
     batch_inversion,
-    fields::{f128, f62, f64},
-    fields::{CubeExtension, QuadExtension},
+    fields::{f128, f62, f64, CubeExtension, QuadExtension},
     ExtensibleField, FieldElement, StarkField,
 };
 
@@ -44,7 +44,7 @@ pub fn field_ops<B>(c: &mut Criterion, field_name: &str)
 where
     B: StarkField + ExtensibleField<2> + ExtensibleField<3>,
 {
-    let mut group = c.benchmark_group(format!("field/{}", field_name));
+    let mut group = c.benchmark_group(format!("field/{field_name}"));
 
     // --- base field -----------------------------------------------------------------------------
 
@@ -146,7 +146,7 @@ where
 // ARRAY OPS
 // ================================================================================================
 pub fn array_ops<E: FieldElement, M: Measurement>(group: &mut BenchmarkGroup<M>, extension: &str) {
-    group.bench_function(format!("{}/array/add", extension), |b| {
+    group.bench_function(format!("{extension}/array/add"), |b| {
         b.iter_batched(
             || (rand_array::<E, 100>(), rand_array::<E, 100>()),
             |(mut x, y)| {
@@ -159,7 +159,7 @@ pub fn array_ops<E: FieldElement, M: Measurement>(group: &mut BenchmarkGroup<M>,
         )
     });
 
-    group.bench_function(format!("{}/array/sub", extension), |b| {
+    group.bench_function(format!("{extension}/array/sub"), |b| {
         b.iter_batched(
             || (rand_array::<E, 100>(), rand_array::<E, 100>()),
             |(mut x, y)| {
@@ -172,7 +172,7 @@ pub fn array_ops<E: FieldElement, M: Measurement>(group: &mut BenchmarkGroup<M>,
         )
     });
 
-    group.bench_function(format!("{}/array/mul", extension), |b| {
+    group.bench_function(format!("{extension}/array/mul"), |b| {
         b.iter_batched(
             || (rand_array::<E, 100>(), rand_array::<E, 100>()),
             |(mut x, y)| {
@@ -189,16 +189,9 @@ pub fn array_ops<E: FieldElement, M: Measurement>(group: &mut BenchmarkGroup<M>,
 // BATCH OPS
 // ================================================================================================
 pub fn batch_ops<E: FieldElement, M: Measurement>(group: &mut BenchmarkGroup<M>, extension: &str) {
-    group.bench_function(format!("{}/batch/add", extension), |b| {
+    group.bench_function(format!("{extension}/batch/add"), |b| {
         b.iter_batched(
-            || {
-                (
-                    rand_value::<E>(),
-                    rand_value::<E>(),
-                    rand_value::<E>(),
-                    rand_value::<E>(),
-                )
-            },
+            || (rand_value::<E>(), rand_value::<E>(), rand_value::<E>(), rand_value::<E>()),
             |(mut a, mut b, mut c, mut d)| {
                 for _ in 0..25 {
                     let t0 = a + b;
@@ -217,16 +210,9 @@ pub fn batch_ops<E: FieldElement, M: Measurement>(group: &mut BenchmarkGroup<M>,
         )
     });
 
-    group.bench_function(format!("{}/batch/sub", extension), |b| {
+    group.bench_function(format!("{extension}/batch/sub"), |b| {
         b.iter_batched(
-            || {
-                (
-                    rand_value::<E>(),
-                    rand_value::<E>(),
-                    rand_value::<E>(),
-                    rand_value::<E>(),
-                )
-            },
+            || (rand_value::<E>(), rand_value::<E>(), rand_value::<E>(), rand_value::<E>()),
             |(mut a, mut b, mut c, mut d)| {
                 for _ in 0..25 {
                     let t0 = a - b;
@@ -245,16 +231,9 @@ pub fn batch_ops<E: FieldElement, M: Measurement>(group: &mut BenchmarkGroup<M>,
         )
     });
 
-    group.bench_function(format!("{}/batch/mul", extension), |b| {
+    group.bench_function(format!("{extension}/batch/mul"), |b| {
         b.iter_batched(
-            || {
-                (
-                    rand_value::<E>(),
-                    rand_value::<E>(),
-                    rand_value::<E>(),
-                    rand_value::<E>(),
-                )
-            },
+            || (rand_value::<E>(), rand_value::<E>(), rand_value::<E>(), rand_value::<E>()),
             |(mut a, mut b, mut c, mut d)| {
                 for _ in 0..25 {
                     let t0 = a * b;

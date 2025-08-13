@@ -3,10 +3,11 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use super::{exp_acc, Digest, ElementHasher, Hasher};
-use core::convert::TryInto;
 use core::ops::Range;
+
 use math::{fields::f64::BaseElement, FieldElement, StarkField};
+
+use super::{super::mds::mds_f64_12x12::mds_multiply, exp_acc, Digest, ElementHasher, Hasher};
 
 mod digest;
 pub use digest::ElementDigest;
@@ -14,13 +15,10 @@ pub use digest::ElementDigest;
 #[cfg(test)]
 mod tests;
 
-mod mds_freq;
-use mds_freq::mds_multiply_freq;
-
 // CONSTANTS
 // ================================================================================================
 
-/// Sponge state is set to 12 field elements or 768 bytes; 8 elements are reserved for rate and
+/// Sponge state is set to 12 field elements or 96 bytes; 8 elements are reserved for rate and
 /// the remaining 4 elements are reserved for capacity.
 const STATE_WIDTH: usize = 12;
 
@@ -63,32 +61,32 @@ const INV_ALPHA: u64 = 10540996611094048183;
 /// The hash function is implemented according to the Rescue Prime
 /// [specifications](https://eprint.iacr.org/2020/1143.pdf) with the following exception:
 /// * We set the number of rounds to 7, which implies a 40% security margin instead of the 50%
-///   margin used in the specifications (a 50% margin rounds up to 8 rounds). The primary
-///   motivation for this is that having the number of rounds be one less than a power of two
-///   simplifies AIR design for computations involving the hash function.
-/// * When hashing a sequence of elements, we do not append Fp(1) followed by Fp(0) elements
-///   to the end of the sequence as padding. Instead, we initialize the first capacity element
-///   to the number of elements to be hashed, and pad the sequence with Fp(0) elements only. This
-///   ensures consistency of hash outputs between different hashing methods (see section below).
-///   However, it also means that our instantiation of Rescue Prime cannot be used in a stream
-///   mode as the number of elements to be hashed must be known upfront.
+///   margin used in the specifications (a 50% margin rounds up to 8 rounds). The primary motivation
+///   for this is that having the number of rounds be one less than a power of two simplifies AIR
+///   design for computations involving the hash function.
+/// * When hashing a sequence of elements, we do not append Fp(1) followed by Fp(0) elements to the
+///   end of the sequence as padding. Instead, we initialize the first capacity element to the
+///   number of elements to be hashed, and pad the sequence with Fp(0) elements only. This ensures
+///   consistency of hash outputs between different hashing methods (see section below). However, it
+///   also means that our instantiation of Rescue Prime cannot be used in a stream mode as the
+///   number of elements to be hashed must be known upfront.
 /// * We use the first 4 elements of the state (rather than the last 4 elements of the state) for
-///   capacity and the remaining 8 elements for rate. The output of the hash function comes from
-///   the first four elements of the rate portion of the state (elements 4, 5, 6, and 7). This
+///   capacity and the remaining 8 elements for rate. The output of the hash function comes from the
+///   first four elements of the rate portion of the state (elements 4, 5, 6, and 7). This
 ///   effectively applies a fixed bit permutation before and after XLIX permutation. We assert
 ///   without proof that this does not affect security of the construction.
 /// * Instead of using Vandermonde matrices as a standard way of generating an MDS matrix as
-///   described in Rescue Prime paper, we use a methodology developed by Polygon Zero to find an
-///   MDS matrix with coefficients which are small powers of two in frequency domain. This allows
-///   us to dramatically reduce MDS matrix multiplication time. Using a different MDS matrix does
-///   not affect security of the hash function as any MDS matrix satisfies Rescue Prime
-///   construction (as described in section 4.2 of the paper).
+///   described in Rescue Prime paper, we use a methodology developed by Polygon Zero to find an MDS
+///   matrix with coefficients which are small powers of two in frequency domain. This allows us to
+///   dramatically reduce MDS matrix multiplication time. Using a different MDS matrix does not
+///   affect security of the hash function as any MDS matrix satisfies Rescue Prime construction (as
+///   described in section 4.2 of the paper).
 ///
 /// The parameters used to instantiate the function are:
 /// * Field: 64-bit prime field with modulus 2^64 - 2^32 + 1.
 /// * State width: 12 field elements.
 /// * Capacity size: 4 field elements.
-/// * Number of founds: 7.
+/// * Number of rounds: 7.
 /// * S-Box degree: 7.
 ///
 /// The above parameters target 128-bit security level. The digest consists of four field elements
@@ -120,11 +118,13 @@ pub struct Rp64_256();
 impl Hasher for Rp64_256 {
     type Digest = ElementDigest;
 
+    const COLLISION_RESISTANCE: u32 = 128;
+
     fn hash(bytes: &[u8]) -> Self::Digest {
         // compute the number of elements required to represent the string; we will be processing
         // the string in 7-byte chunks, thus the number of elements will be equal to the number
         // of such chunks (including a potential partial chunk at the end).
-        let num_elements = if bytes.len() % 7 == 0 {
+        let num_elements = if bytes.len().is_multiple_of(7) {
             bytes.len() / 7
         } else {
             bytes.len() / 7 + 1
@@ -160,7 +160,7 @@ impl Hasher for Rp64_256 {
             // again from zero index.
             state[RATE_RANGE.start + i] += BaseElement::new(u64::from_le_bytes(buf));
             i += 1;
-            if i % RATE_WIDTH == 0 {
+            if i.is_multiple_of(RATE_WIDTH) {
                 Self::apply_permutation(&mut state);
                 i = 0;
             }
@@ -191,14 +191,17 @@ impl Hasher for Rp64_256 {
         ElementDigest::new(state[DIGEST_RANGE].try_into().unwrap())
     }
 
+    fn merge_many(values: &[Self::Digest]) -> Self::Digest {
+        Self::hash_elements(ElementDigest::digests_as_elements(values))
+    }
+
     fn merge_with_int(seed: Self::Digest, value: u64) -> Self::Digest {
         // initialize the state as follows:
         // - seed is copied into the first 4 elements of the rate portion of the state.
-        // - if the value fits into a single field element, copy it into the fifth rate element
-        //   and set the first capacity element to 5 (the number of elements to be hashed).
-        // - if the value doesn't fit into a single field element, split it into two field
-        //   elements, copy them into rate elements 5 and 6, and set the first capacity element
-        //   to 6.
+        // - if the value fits into a single field element, copy it into the fifth rate element and
+        //   set the first capacity element to 5 (the number of elements to be hashed).
+        // - if the value doesn't fit into a single field element, split it into two field elements,
+        //   copy them into rate elements 5 and 6, and set the first capacity element to 6.
         let mut state = [BaseElement::ZERO; STATE_WIDTH];
         state[INPUT1_RANGE].copy_from_slice(seed.as_elements());
         state[INPUT2_RANGE.start] = BaseElement::new(value);
@@ -220,7 +223,7 @@ impl ElementHasher for Rp64_256 {
 
     fn hash_elements<E: FieldElement<BaseField = Self::BaseField>>(elements: &[E]) -> Self::Digest {
         // convert the elements into a list of base field elements
-        let elements = E::as_base_elements(elements);
+        let elements = E::slice_as_base_elements(elements);
 
         // initialize state to all zeros, except for the last element of the capacity part, which
         // is set to the number of elements to be hashed. this is done so that adding zero elements
@@ -235,7 +238,7 @@ impl ElementHasher for Rp64_256 {
         for &element in elements.iter() {
             state[RATE_RANGE.start + i] += element;
             i += 1;
-            if i % RATE_WIDTH == 0 {
+            if i.is_multiple_of(RATE_WIDTH) {
                 Self::apply_permutation(&mut state);
                 i = 0;
             }
@@ -264,7 +267,7 @@ impl Rp64_256 {
     /// The number of rounds is set to 7 to target 128-bit security level with 40% security margin.
     pub const NUM_ROUNDS: usize = NUM_ROUNDS;
 
-    /// Sponge state is set to 12 field elements or 768 bytes; 8 elements are reserved for rate and
+    /// Sponge state is set to 12 field elements or 96 bytes; 8 elements are reserved for rate and
     /// the remaining 4 elements are reserved for capacity.
     pub const STATE_WIDTH: usize = STATE_WIDTH;
 
@@ -320,33 +323,7 @@ impl Rp64_256 {
 
     #[inline(always)]
     fn apply_mds(state: &mut [BaseElement; STATE_WIDTH]) {
-        let mut result = [BaseElement::ZERO; STATE_WIDTH];
-
-        // Using the linearity of the operations we can split the state into a low||high decomposition
-        // and operate on each with no overflow and then combine/reduce the result to a field element.
-        let mut state_l = [0u64; STATE_WIDTH];
-        let mut state_h = [0u64; STATE_WIDTH];
-
-        for r in 0..STATE_WIDTH {
-            let s = state[r].inner();
-            state_h[r] = s >> 32;
-            state_l[r] = (s as u32) as u64;
-        }
-
-        let state_h = mds_multiply_freq(state_h);
-        let state_l = mds_multiply_freq(state_l);
-
-        for r in 0..STATE_WIDTH {
-            let s = state_l[r] as u128 + ((state_h[r] as u128) << 32);
-            let s_hi = (s >> 64) as u64;
-            let s_lo = s as u64;
-            let z = (s_hi << 32) - s_hi;
-            let (res, over) = s_lo.overflowing_add(z);
-
-            result[r] =
-                BaseElement::from_mont(res.wrapping_add(0u32.wrapping_sub(over as u32) as u64));
-        }
-        *state = result;
+        mds_multiply(state)
     }
 
     #[inline(always)]

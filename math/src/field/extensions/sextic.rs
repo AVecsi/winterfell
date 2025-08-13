@@ -11,8 +11,10 @@ use core::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     slice,
 };
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use utils::{
-    collections::Vec, string::ToString, AsBytes, ByteReader, ByteWriter, Deserializable,
+    AsBytes, ByteReader, ByteWriter, Deserializable,
     DeserializationError, Randomizable, Serializable, SliceReader,
 };
 
@@ -90,7 +92,7 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> FieldElement for S
     fn conjugate(&self) -> Self {
         let x = [self.0, self.1];
         let mut y: [B; 6] = Default::default();
-        y.copy_from_slice(<CubeExtension<B> as FieldElement>::as_base_elements(&x));
+        y.copy_from_slice(<CubeExtension<B> as FieldElement>::slice_as_base_elements(&x));
         let r = <B as ExtensibleField<6>>::frobenius(y);
         Self(
             CubeExtension::new(r[0], r[1], r[2]),
@@ -128,17 +130,28 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> FieldElement for S
         Ok(slice::from_raw_parts(p as *const Self, len))
     }
 
-    fn zeroed_vector(n: usize) -> Vec<Self> {
-        // get twice the number of cubic extesnion elements, and re-interpret them as sextic
-        // extension field elements.
-        let result = CubeExtension::zeroed_vector(n * 2);
-        Self::base_to_sextic_vector(result)
-    }
-
-    fn as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
+    fn slice_as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
         let ptr = elements.as_ptr();
         let len = elements.len() * 2 * 3;
         unsafe { slice::from_raw_parts(ptr as *const Self::BaseField, len) }
+    }
+    
+    const EXTENSION_DEGREE: usize = 6;
+    
+    fn base_element(&self, i: usize) -> Self::BaseField {
+        todo!()
+    }
+    
+    fn slice_from_base_elements(elements: &[Self::BaseField]) -> &[Self] {
+        assert!(
+            elements.len().is_multiple_of(Self::EXTENSION_DEGREE),
+            "number of base elements must be divisible by 3, but was {}",
+            elements.len()
+        );
+
+        let ptr = elements.as_ptr();
+        let len = elements.len() / Self::EXTENSION_DEGREE;
+        unsafe { slice::from_raw_parts(ptr as *const Self, len) }
     }
 }
 
@@ -158,7 +171,7 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> ExtensionOf<B>
     fn mul_base(self, other: B) -> Self {
         let x = [self.0, self.1];
         let mut y: [B; 6] = Default::default();
-        y.copy_from_slice(<CubeExtension<B> as FieldElement>::as_base_elements(&x));
+        y.copy_from_slice(<CubeExtension<B> as FieldElement>::slice_as_base_elements(&x));
         let r = <B as ExtensibleField<6>>::mul_base(y, other);
         Self(
             CubeExtension::new(r[0], r[1], r[2]),
@@ -223,11 +236,11 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> Mul for SexticExte
     fn mul(self, rhs: Self) -> Self {
         let x0 = [self.0, self.1];
         let mut y0: [B; 6] = Default::default();
-        y0.copy_from_slice(<CubeExtension<B> as FieldElement>::as_base_elements(&x0));
+        y0.copy_from_slice(<CubeExtension<B> as FieldElement>::slice_as_base_elements(&x0));
 
         let x1 = [rhs.0, rhs.1];
         let mut y1: [B; 6] = Default::default();
-        y1.copy_from_slice(<CubeExtension<B> as FieldElement>::as_base_elements(&x1));
+        y1.copy_from_slice(<CubeExtension<B> as FieldElement>::slice_as_base_elements(&x1));
 
         let r = <B as ExtensibleField<6>>::mul(y0, y1);
         Self(
@@ -287,18 +300,6 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> From<B> for Sextic
     }
 }
 
-impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> From<u128> for SexticExtension<B> {
-    fn from(value: u128) -> Self {
-        Self(CubeExtension::from(value), CubeExtension::ZERO)
-    }
-}
-
-impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> From<u64> for SexticExtension<B> {
-    fn from(value: u64) -> Self {
-        Self(CubeExtension::from(value), CubeExtension::ZERO)
-    }
-}
-
 impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> From<u32> for SexticExtension<B> {
     fn from(value: u32) -> Self {
         Self(CubeExtension::from(value), CubeExtension::ZERO)
@@ -316,6 +317,32 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> From<u8> for Sexti
         Self(CubeExtension::from(value), CubeExtension::ZERO)
     }
 }
+impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> TryFrom<u64> for SexticExtension<B> {
+    type Error = String;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match B::try_from(value) {
+            Ok(elem) => Ok(Self::from(elem)),
+            Err(_) => Err(format!(
+                "invalid field element: value {value} is greater than or equal to the field modulus"
+            )),
+        }
+    }
+}
+
+impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> TryFrom<u128> for SexticExtension<B> {
+    type Error = String;
+
+    fn try_from(value: u128) -> Result<Self, Self::Error> {
+        match B::try_from(value) {
+            Ok(elem) => Ok(Self::from(elem)),
+            Err(_) => Err(format!(
+                "invalid field element: value {value} is greater than or equal to the field modulus"
+            )),
+        }
+    }
+}
+
 impl<'a, B: ExtensibleField<3> + ExtensibleField<6> + StarkField> TryFrom<&'a [u8]>
     for SexticExtension<B>
 {
@@ -432,18 +459,6 @@ mod tests {
         // test inverse
         let r3: SexticExtension<BaseElement> = rand_value();
         assert_eq!(SexticExtension::<BaseElement>::ONE, r3 / r3);
-    }
-
-    // INITIALIZATION
-    // --------------------------------------------------------------------------------------------
-
-    #[test]
-    fn zeroed_vector() {
-        let result = SexticExtension::<BaseElement>::zeroed_vector(6);
-        assert_eq!(6, result.len());
-        for element in result.into_iter() {
-            assert_eq!(SexticExtension::<BaseElement>::ZERO, element);
-        }
     }
 
     // SERIALIZATION / DESERIALIZATION
@@ -585,7 +600,7 @@ mod tests {
 
         assert_eq!(
             expected,
-            SexticExtension::<BaseElement>::as_base_elements(&elements)
+            SexticExtension::<BaseElement>::slice_as_base_elements(&elements)
         );
     }
 }

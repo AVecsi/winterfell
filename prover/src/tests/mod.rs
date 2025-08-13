@@ -3,13 +3,15 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::TraceTable;
+use alloc::vec::Vec;
+
 use air::{
-    Air, AirContext, Assertion, EvaluationFrame, FieldExtension, HashFunction, ProofOptions,
+    Air, AirContext, Assertion, BatchingMethod, EvaluationFrame, FieldExtension, ProofOptions,
     TraceInfo, TransitionConstraintDegree,
 };
 use math::{fields::f128::BaseElement, FieldElement, StarkField};
-use utils::collections::Vec;
+
+use crate::TraceTable;
 
 // FIBONACCI TRACE BUILDER
 // ================================================================================================
@@ -46,10 +48,11 @@ impl MockAir {
                 32,
                 8,
                 0,
-                HashFunction::Blake3_256,
                 FieldExtension::None,
                 4,
-                256,
+                31,
+                BatchingMethod::Linear,
+                BatchingMethod::Linear,
             ),
         )
     }
@@ -65,10 +68,11 @@ impl MockAir {
                 32,
                 8,
                 0,
-                HashFunction::Blake3_256,
                 FieldExtension::None,
                 4,
-                256,
+                31,
+                BatchingMethod::Linear,
+                BatchingMethod::Linear,
             ),
         );
         result.periodic_columns = column_values;
@@ -83,10 +87,11 @@ impl MockAir {
                 32,
                 8,
                 0,
-                HashFunction::Blake3_256,
                 FieldExtension::None,
                 4,
-                256,
+                31,
+                BatchingMethod::Linear,
+                BatchingMethod::Linear,
             ),
         );
         result.assertions = assertions;
@@ -140,10 +145,11 @@ fn build_context<B: StarkField>(
         32,
         blowup_factor,
         0,
-        HashFunction::Blake3_256,
         FieldExtension::None,
         4,
-        256,
+        31,
+        BatchingMethod::Linear,
+        BatchingMethod::Linear,
     );
     let t_degrees = vec![TransitionConstraintDegree::new(2)];
     AirContext::new(trace_info, t_degrees, num_assertions, options)

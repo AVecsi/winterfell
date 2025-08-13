@@ -5,15 +5,18 @@
 
 use super::{ExtensibleField, ExtensionOf, FieldElement};
 use crate::StarkField;
+use alloc::string::{String, ToString};
 use core::{
-    convert::TryFrom,
     fmt,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     slice,
 };
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use utils::{
-    collections::Vec, string::ToString, AsBytes, ByteReader, ByteWriter, Deserializable,
-    DeserializationError, Randomizable, Serializable, SliceReader,
+    AsBytes, ByteReader, ByteWriter, Deserializable, DeserializationError, Randomizable,
+    Serializable, SliceReader,
 };
 
 // QUADRATIC EXTENSION FIELD
@@ -30,7 +33,7 @@ pub struct QuadExtension<B: ExtensibleField<2> + StarkField>(B, B);
 
 impl<B: ExtensibleField<2> + StarkField> QuadExtension<B> {
     /// Returns a new extension element instantiated from the provided base elements.
-    pub fn new(a: B, b: B) -> Self {
+    pub const fn new(a: B, b: B) -> Self {
         Self(a, b)
     }
 
@@ -39,20 +42,12 @@ impl<B: ExtensibleField<2> + StarkField> QuadExtension<B> {
         <B as ExtensibleField<2>>::is_supported()
     }
 
-    /// Converts a vector of base elements into a vector of elements in a quadratic extension
-    /// field by fusing two adjacent base elements together. The output vector is half the length
-    /// of the source vector.
-    fn base_to_quad_vector(source: Vec<B>) -> Vec<Self> {
-        debug_assert!(
-            source.len() % 2 == 0,
-            "source vector length must be divisible by two, but was {}",
-            source.len()
-        );
-        let mut v = core::mem::ManuallyDrop::new(source);
-        let p = v.as_mut_ptr();
-        let len = v.len() / 2;
-        let cap = v.capacity() / 2;
-        unsafe { Vec::from_raw_parts(p as *mut Self, len, cap) }
+    /// Returns an array of base field elements comprising this extension field element.
+    ///
+    /// The order of abase elements in the returned array is the same as the order in which
+    /// the elements are provided to the [QuadExtension::new()] constructor.
+    pub const fn to_base_elements(self) -> [B; 2] {
+        [self.0, self.1]
     }
 }
 
@@ -60,14 +55,25 @@ impl<B: ExtensibleField<2> + StarkField> FieldElement for QuadExtension<B> {
     type PositiveInteger = B::PositiveInteger;
     type BaseField = B;
 
-    const ELEMENT_BYTES: usize = B::ELEMENT_BYTES * 2;
+    const EXTENSION_DEGREE: usize = 2;
+
+    const ELEMENT_BYTES: usize = B::ELEMENT_BYTES * Self::EXTENSION_DEGREE;
     const IS_CANONICAL: bool = B::IS_CANONICAL;
     const ZERO: Self = Self(B::ZERO, B::ZERO);
     const ONE: Self = Self(B::ONE, B::ZERO);
 
+    // ALGEBRA
+    // --------------------------------------------------------------------------------------------
+
     #[inline]
     fn double(self) -> Self {
         Self(self.0.double(), self.1.double())
+    }
+
+    #[inline]
+    fn square(self) -> Self {
+        let a = <B as ExtensibleField<2>>::square([self.0, self.1]);
+        Self(a[0], a[1])
     }
 
     #[inline]
@@ -92,6 +98,38 @@ impl<B: ExtensibleField<2> + StarkField> FieldElement for QuadExtension<B> {
         Self(result[0], result[1])
     }
 
+    // BASE ELEMENT CONVERSIONS
+    // --------------------------------------------------------------------------------------------
+
+    fn base_element(&self, i: usize) -> Self::BaseField {
+        match i {
+            0 => self.0,
+            1 => self.1,
+            _ => panic!("element index must be smaller than 2, but was {i}"),
+        }
+    }
+
+    fn slice_as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
+        let ptr = elements.as_ptr();
+        let len = elements.len() * Self::EXTENSION_DEGREE;
+        unsafe { slice::from_raw_parts(ptr as *const Self::BaseField, len) }
+    }
+
+    fn slice_from_base_elements(elements: &[Self::BaseField]) -> &[Self] {
+        assert!(
+            elements.len().is_multiple_of(Self::EXTENSION_DEGREE),
+            "number of base elements must be divisible by 2, but was {}",
+            elements.len()
+        );
+
+        let ptr = elements.as_ptr();
+        let len = elements.len() / Self::EXTENSION_DEGREE;
+        unsafe { slice::from_raw_parts(ptr as *const Self, len) }
+    }
+
+    // SERIALIZATION / DESERIALIZATION
+    // --------------------------------------------------------------------------------------------
+
     fn elements_as_bytes(elements: &[Self]) -> &[u8] {
         unsafe {
             slice::from_raw_parts(
@@ -102,7 +140,7 @@ impl<B: ExtensibleField<2> + StarkField> FieldElement for QuadExtension<B> {
     }
 
     unsafe fn bytes_as_elements(bytes: &[u8]) -> Result<&[Self], DeserializationError> {
-        if bytes.len() % Self::ELEMENT_BYTES != 0 {
+        if !bytes.len().is_multiple_of(Self::ELEMENT_BYTES) {
             return Err(DeserializationError::InvalidValue(format!(
                 "number of bytes ({}) does not divide into whole number of field elements",
                 bytes.len(),
@@ -113,25 +151,13 @@ impl<B: ExtensibleField<2> + StarkField> FieldElement for QuadExtension<B> {
         let len = bytes.len() / Self::ELEMENT_BYTES;
 
         // make sure the bytes are aligned on the boundary consistent with base element alignment
-        if (p as usize) % Self::BaseField::ELEMENT_BYTES != 0 {
+        if !(p as usize).is_multiple_of(Self::BaseField::ELEMENT_BYTES) {
             return Err(DeserializationError::InvalidValue(
                 "slice memory alignment is not valid for this field element type".to_string(),
             ));
         }
 
         Ok(slice::from_raw_parts(p as *const Self, len))
-    }
-
-    fn zeroed_vector(n: usize) -> Vec<Self> {
-        // get twice the number of base elements, and re-interpret them as quad field elements
-        let result = B::zeroed_vector(n * 2);
-        Self::base_to_quad_vector(result)
-    }
-
-    fn as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
-        let ptr = elements.as_ptr();
-        let len = elements.len() * 2;
-        unsafe { slice::from_raw_parts(ptr as *const Self::BaseField, len) }
     }
 }
 
@@ -244,17 +270,6 @@ impl<B: ExtensibleField<2> + StarkField> From<B> for QuadExtension<B> {
     }
 }
 
-impl<B: ExtensibleField<2> + StarkField> From<u128> for QuadExtension<B> {
-    fn from(value: u128) -> Self {
-        Self(B::from(value), B::ZERO)
-    }
-}
-
-impl<B: ExtensibleField<2> + StarkField> From<u64> for QuadExtension<B> {
-    fn from(value: u64) -> Self {
-        Self(B::from(value), B::ZERO)
-    }
-}
 
 impl<B: ExtensibleField<2> + StarkField> From<u32> for QuadExtension<B> {
     fn from(value: u32) -> Self {
@@ -274,7 +289,33 @@ impl<B: ExtensibleField<2> + StarkField> From<u8> for QuadExtension<B> {
     }
 }
 
-impl<'a, B: ExtensibleField<2> + StarkField> TryFrom<&'a [u8]> for QuadExtension<B> {
+impl<B: ExtensibleField<2> + StarkField> TryFrom<u64> for QuadExtension<B> {
+    type Error = String;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match B::try_from(value) {
+            Ok(elem) => Ok(Self::from(elem)),
+            Err(_) => Err(format!(
+                "invalid field element: value {value} is greater than or equal to the field modulus"
+            )),
+        }
+    }
+}
+
+impl<B: ExtensibleField<2> + StarkField> TryFrom<u128> for QuadExtension<B> {
+    type Error = String;
+
+    fn try_from(value: u128) -> Result<Self, Self::Error> {
+        match B::try_from(value) {
+            Ok(elem) => Ok(Self::from(elem)),
+            Err(_) => Err(format!(
+                "invalid field element: value {value} is greater than or equal to the field modulus"
+            )),
+        }
+    }
+}
+
+impl<B: ExtensibleField<2> + StarkField> TryFrom<&'_ [u8]> for QuadExtension<B> {
     type Error = DeserializationError;
 
     /// Converts a slice of bytes into a field element; returns error if the value encoded in bytes
@@ -330,9 +371,10 @@ impl<B: ExtensibleField<2> + StarkField> Deserializable for QuadExtension<B> {
 
 #[cfg(test)]
 mod tests {
+    use rand_utils::rand_value;
+
     use super::{DeserializationError, FieldElement, QuadExtension};
     use crate::field::f64::BaseElement;
-    use rand_utils::rand_value;
 
     // BASIC ALGEBRA
     // --------------------------------------------------------------------------------------------
@@ -365,18 +407,6 @@ mod tests {
         assert_eq!(expected, r1 - r2);
     }
 
-    // INITIALIZATION
-    // --------------------------------------------------------------------------------------------
-
-    #[test]
-    fn zeroed_vector() {
-        let result = QuadExtension::<BaseElement>::zeroed_vector(4);
-        assert_eq!(4, result.len());
-        for element in result.into_iter() {
-            assert_eq!(QuadExtension::<BaseElement>::ZERO, element);
-        }
-    }
-
     // SERIALIZATION / DESERIALIZATION
     // --------------------------------------------------------------------------------------------
 
@@ -393,10 +423,7 @@ mod tests {
         expected.extend_from_slice(&source[1].0.inner().to_le_bytes());
         expected.extend_from_slice(&source[1].1.inner().to_le_bytes());
 
-        assert_eq!(
-            expected,
-            QuadExtension::<BaseElement>::elements_as_bytes(&source)
-        );
+        assert_eq!(expected, QuadExtension::<BaseElement>::elements_as_bytes(&source));
     }
 
     #[test]
@@ -440,9 +467,6 @@ mod tests {
             BaseElement::new(4),
         ];
 
-        assert_eq!(
-            expected,
-            QuadExtension::<BaseElement>::as_base_elements(&elements)
-        );
+        assert_eq!(expected, QuadExtension::<BaseElement>::slice_as_base_elements(&elements));
     }
 }

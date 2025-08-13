@@ -172,18 +172,6 @@ fn try_from_slice() {
     assert!(result.is_err());
 }
 
-// INITIALIZATION
-// ------------------------------------------------------------------------------------------------
-
-#[test]
-fn zeroed_vector() {
-    let result = BaseElement::zeroed_vector(4);
-    assert_eq!(4, result.len());
-    for element in result.into_iter() {
-        assert_eq!(BaseElement::ZERO, element);
-    }
-}
-
 // QUADRATIC EXTENSION
 // ------------------------------------------------------------------------------------------------
 #[test]

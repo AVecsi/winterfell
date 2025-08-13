@@ -3,13 +3,13 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use proptest::prelude::*;
+use rand_utils::{rand_array, rand_value};
+
 use super::{
     BaseElement, ElementDigest, ElementHasher, FieldElement, Hasher, Rp64_256, StarkField, ALPHA,
     INV_ALPHA, INV_MDS, MDS, STATE_WIDTH,
 };
-use core::convert::TryInto;
-
-use rand_utils::{rand_array, rand_value};
 
 #[test]
 fn mds_inv_test() {
@@ -18,6 +18,7 @@ fn mds_inv_test() {
         for j in 0..STATE_WIDTH {
             let result = {
                 let mut result = BaseElement::new(0);
+                #[allow(clippy::needless_range_loop)]
                 for k in 0..STATE_WIDTH {
                     result += MDS[i][k] * INV_MDS[k][j]
                 }
@@ -35,7 +36,7 @@ fn mds_inv_test() {
 #[test]
 fn test_alphas() {
     let e: BaseElement = rand_value();
-    let e_exp = e.exp(ALPHA.into());
+    let e_exp = e.exp(ALPHA);
     assert_eq!(e, e_exp.exp(INV_ALPHA));
 }
 
@@ -118,6 +119,20 @@ fn hash_elements_vs_merge() {
 }
 
 #[test]
+fn merge_vs_merge_many() {
+    let elements: [BaseElement; 8] = rand_array();
+
+    let digests: [ElementDigest; 2] = [
+        ElementDigest::new(elements[..4].try_into().unwrap()),
+        ElementDigest::new(elements[4..].try_into().unwrap()),
+    ];
+
+    let m_result = Rp64_256::merge(&digests);
+    let h_result = Rp64_256::merge_many(&digests);
+    assert_eq!(m_result, h_result);
+}
+
+#[test]
 fn hash_elements_vs_merge_with_int() {
     let seed = ElementDigest::new(rand_array());
 
@@ -174,4 +189,34 @@ fn hash_elements_padding() {
     let r1 = Rp64_256::hash_elements(&e1);
     let r2 = Rp64_256::hash_elements(&e2);
     assert_ne!(r1, r2);
+}
+
+#[inline(always)]
+fn apply_mds_naive(state: &mut [BaseElement; STATE_WIDTH]) {
+    let mut result = [BaseElement::ZERO; STATE_WIDTH];
+    result.iter_mut().zip(MDS).for_each(|(r, mds_row)| {
+        state.iter().zip(mds_row).for_each(|(&s, m)| {
+            *r += m * s;
+        });
+    });
+    *state = result;
+}
+
+proptest! {
+    #[test]
+    fn mds_freq_proptest(a in any::<[u64; STATE_WIDTH]>()) {
+
+        let mut v1 = [BaseElement::ZERO; STATE_WIDTH];
+        let mut v2;
+
+        for i in 0..STATE_WIDTH {
+            v1[i] = BaseElement::new(a[i]);
+        }
+        v2 = v1;
+
+        apply_mds_naive(&mut v1);
+        Rp64_256::apply_mds(&mut v2);
+
+        prop_assert_eq!(v1, v2);
+    }
 }

@@ -3,11 +3,12 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use std::time::Duration;
+
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
-use crypto::hashers::Blake3_256;
+use crypto::{hashers::Blake3_256, DefaultRandomCoin, MerkleTree};
 use math::{fft, fields::f128::BaseElement, FieldElement};
 use rand_utils::rand_vector;
-use std::time::Duration;
 use winter_fri::{DefaultProverChannel, FriOptions, FriProver};
 
 static BATCH_SIZES: [usize; 3] = [65536, 131072, 262144];
@@ -18,7 +19,7 @@ pub fn build_layers(c: &mut Criterion) {
     fri_group.sample_size(10);
     fri_group.measurement_time(Duration::from_secs(10));
 
-    let options = FriOptions::new(BLOWUP_FACTOR, 4, 256);
+    let options = FriOptions::new(BLOWUP_FACTOR, 4, 255);
 
     for &domain_size in &BATCH_SIZES {
         let evaluations = build_evaluations(domain_size);
@@ -27,14 +28,15 @@ pub fn build_layers(c: &mut Criterion) {
             BenchmarkId::new("build_layers", domain_size),
             &evaluations,
             |b, e| {
-                let mut prover = FriProver::new(options.clone());
+                let mut prover =
+                    FriProver::<_, _, _, MerkleTree<Blake3_256<BaseElement>>>::new(options.clone());
                 b.iter_batched(
                     || e.clone(),
                     |evaluations| {
                         let mut channel = DefaultProverChannel::<
                             BaseElement,
-                            BaseElement,
                             Blake3_256<BaseElement>,
+                            DefaultRandomCoin<Blake3_256<BaseElement>>,
                         >::new(domain_size, 32);
                         prover.build_layers(&mut channel, evaluations);
                         prover.reset();

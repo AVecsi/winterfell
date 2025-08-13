@@ -3,15 +3,18 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use super::{CompositionPoly, ConstraintDivisor, ProverError, StarkDomain};
-use math::{batch_inversion, fft, FieldElement, StarkField};
-use utils::{batch_iter_mut, collections::Vec, iter_mut, uninit_vector};
+use alloc::vec::Vec;
 
 #[cfg(debug_assertions)]
 use air::TransitionConstraints;
-
+#[cfg(debug_assertions)]
+use math::fft;
+use math::{batch_inversion, FieldElement, StarkField};
 #[cfg(feature = "concurrent")]
 use utils::iterators::*;
+use utils::{batch_iter_mut, iter_mut, uninit_vector};
+
+use super::{ConstraintDivisor, StarkDomain};
 
 // CONSTANTS
 // ================================================================================================
@@ -21,11 +24,10 @@ const MIN_FRAGMENT_SIZE: usize = 16;
 // CONSTRAINT EVALUATION TABLE
 // ================================================================================================
 
-pub struct ConstraintEvaluationTable<E: FieldElement> {
+pub struct ConstraintEvaluationTable<'a, E: FieldElement> {
     evaluations: Vec<Vec<E>>,
     divisors: Vec<ConstraintDivisor<E::BaseField>>,
-    domain_offset: E::BaseField,
-    trace_length: usize,
+    domain: &'a StarkDomain<E::BaseField>,
 
     #[cfg(debug_assertions)]
     main_transition_evaluations: Vec<Vec<E::BaseField>>,
@@ -35,14 +37,14 @@ pub struct ConstraintEvaluationTable<E: FieldElement> {
     expected_transition_degrees: Vec<usize>,
 }
 
-impl<E: FieldElement> ConstraintEvaluationTable<E> {
+impl<'a, E: FieldElement> ConstraintEvaluationTable<'a, E> {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
     /// Returns a new constraint evaluation table with number of columns equal to the number of
     /// specified divisors, and number of rows equal to the size of constraint evaluation domain.
     #[cfg(not(debug_assertions))]
     pub fn new(
-        domain: &StarkDomain<E::BaseField>,
+        domain: &'a StarkDomain<E::BaseField>,
         divisors: Vec<ConstraintDivisor<E::BaseField>>,
     ) -> Self {
         let num_columns = divisors.len();
@@ -50,8 +52,7 @@ impl<E: FieldElement> ConstraintEvaluationTable<E> {
         ConstraintEvaluationTable {
             evaluations: uninit_matrix(num_columns, num_rows),
             divisors,
-            domain_offset: domain.offset(),
-            trace_length: domain.trace_length(),
+            domain,
         }
     }
 
@@ -60,7 +61,7 @@ impl<E: FieldElement> ConstraintEvaluationTable<E> {
     /// expected degrees match their actual degrees.
     #[cfg(debug_assertions)]
     pub fn new(
-        domain: &StarkDomain<E::BaseField>,
+        domain: &'a StarkDomain<E::BaseField>,
         divisors: Vec<ConstraintDivisor<E::BaseField>>,
         transition_constraints: &TransitionConstraints<E>,
     ) -> Self {
@@ -77,8 +78,7 @@ impl<E: FieldElement> ConstraintEvaluationTable<E> {
         ConstraintEvaluationTable {
             evaluations: uninit_matrix(num_columns, num_rows),
             divisors,
-            domain_offset: domain.offset(),
-            trace_length: domain.trace_length(),
+            domain,
             main_transition_evaluations: uninit_matrix(num_tm_columns, num_rows),
             aux_transition_evaluations: uninit_matrix(num_ta_columns, num_rows),
             expected_transition_degrees,
@@ -94,9 +94,11 @@ impl<E: FieldElement> ConstraintEvaluationTable<E> {
         self.evaluations[0].len()
     }
 
-    /// Returns number of columns in this table. The first column always contains the value of
-    /// combined transition constraint evaluations; the remaining columns contain values of
-    /// assertion constraint evaluations combined based on common divisors.
+    /// Returns number of columns in this table.
+    ///
+    /// The first column always contains the value of combined transition constraint evaluations;
+    /// the remaining columns contain values of assertion constraint evaluations combined based on
+    /// common divisors.
     #[allow(dead_code)]
     pub fn num_columns(&self) -> usize {
         self.evaluations.len()
@@ -107,13 +109,11 @@ impl<E: FieldElement> ConstraintEvaluationTable<E> {
 
     /// Break the table into the number of specified fragments. All fragments can be updated
     /// independently - e.g. in different threads.
-    pub fn fragments(&mut self, num_fragments: usize) -> Vec<EvaluationTableFragment<E>> {
+    pub fn fragments(&mut self, num_fragments: usize) -> Vec<EvaluationTableFragment<'_, E>> {
         let fragment_size = self.num_rows() / num_fragments;
         assert!(
             fragment_size >= MIN_FRAGMENT_SIZE,
-            "fragment size must be at least {}, but was {}",
-            MIN_FRAGMENT_SIZE,
-            fragment_size
+            "fragment size must be at least {MIN_FRAGMENT_SIZE}, but was {fragment_size}"
         );
 
         // break evaluations into fragments
@@ -158,34 +158,21 @@ impl<E: FieldElement> ConstraintEvaluationTable<E> {
 
     // CONSTRAINT COMPOSITION
     // --------------------------------------------------------------------------------------------
-    /// Divides constraint evaluation columns by their respective divisor (in evaluation form),
-    /// combines the results into a single column, and interpolates this column into a composition
-    /// polynomial in coefficient form.
-    pub fn into_poly(self) -> Result<CompositionPoly<E>, ProverError> {
-        let domain_offset = self.domain_offset;
-
+    /// Divides constraint evaluation columns by their respective divisor (in evaluation form) and
+    /// combines the results into a single column.
+    pub fn combine(self) -> Vec<E> {
         // allocate memory for the combined polynomial
-        let mut combined_poly = E::zeroed_vector(self.num_rows());
+        let mut combined_poly = vec![E::ZERO; self.num_rows()];
 
         // iterate over all columns of the constraint evaluation table, divide each column
         // by the evaluations of its corresponding divisor, and add all resulting evaluations
         // together into a single vector
         for (column, divisor) in self.evaluations.into_iter().zip(self.divisors.iter()) {
-            // in debug mode, make sure post-division degree of each column matches the expected
-            // degree
-            #[cfg(debug_assertions)]
-            validate_column_degree(&column, divisor, domain_offset, column.len() - 1)?;
-
             // divide the column by the divisor and accumulate the result into combined_poly
-            acc_column(column, divisor, domain_offset, &mut combined_poly);
+            acc_column(column, divisor, self.domain, &mut combined_poly);
         }
 
-        // at this point, combined_poly contains evaluations of the combined constraint polynomial;
-        // we interpolate this polynomial to transform it into coefficient form.
-        let inv_twiddles = fft::get_inv_twiddles::<E::BaseField>(combined_poly.len());
-        fft::interpolate_poly_with_offset(&mut combined_poly, &inv_twiddles, domain_offset);
-
-        Ok(CompositionPoly::new(combined_poly, self.trace_length))
+        combined_poly
     }
 
     // DEBUG HELPERS
@@ -199,7 +186,7 @@ impl<E: FieldElement> ConstraintEvaluationTable<E> {
         let div_values = evaluate_divisor::<E::BaseField>(
             &self.divisors[0],
             self.num_rows(),
-            self.domain_offset,
+            self.domain.offset(),
         );
 
         // collect actual degrees for all transition constraints by interpolating saved
@@ -216,7 +203,7 @@ impl<E: FieldElement> ConstraintEvaluationTable<E> {
             max_degree = core::cmp::max(max_degree, degree);
         }
 
-        // then process transition constraint evaluations for auxiliary trace segments
+        // then process transition constraint evaluations for the auxiliary trace segment
         for evaluations in self.aux_transition_evaluations.iter() {
             let degree = get_transition_poly_degree(evaluations, &inv_twiddles, &div_values);
             actual_degrees.push(degree);
@@ -232,7 +219,7 @@ impl<E: FieldElement> ConstraintEvaluationTable<E> {
 
         // make sure evaluation domain size does not exceed the size required by max degree
         let expected_domain_size =
-            core::cmp::max(max_degree, self.trace_length + 1).next_power_of_two();
+            core::cmp::max(max_degree, self.domain.trace_length() + 1).next_power_of_two();
         assert_eq!(
             expected_domain_size,
             self.num_rows(),
@@ -256,7 +243,7 @@ pub struct EvaluationTableFragment<'a, E: FieldElement> {
     ta_evaluations: Vec<&'a mut [E]>,
 }
 
-impl<'a, E: FieldElement> EvaluationTableFragment<'a, E> {
+impl<E: FieldElement> EvaluationTableFragment<'_, E> {
     /// Returns the row at which the fragment starts.
     pub fn offset(&self) -> usize {
         self.offset
@@ -330,15 +317,14 @@ fn make_fragments<E: FieldElement>(
 fn acc_column<E: FieldElement>(
     column: Vec<E>,
     divisor: &ConstraintDivisor<E::BaseField>,
-    domain_offset: E::BaseField,
+    domain: &StarkDomain<E::BaseField>,
     result: &mut [E],
 ) {
     let numerator = divisor.numerator();
     assert_eq!(numerator.len(), 1, "complex divisors are not yet supported");
 
     // compute inverse evaluations of the divisor's numerator, which has the form (x^a - b)
-    let domain_size = column.len();
-    let z = get_inv_evaluation(divisor, domain_size, domain_offset);
+    let z = get_inv_evaluation(divisor, domain);
 
     // divide column values by the divisor; for boundary constraints this computed simply as
     // multiplication of column value by the inverse of divisor numerator; for transition
@@ -362,19 +348,14 @@ fn acc_column<E: FieldElement>(
         // form of (x^a - 1) / e(x), where e(x) describes the exemption points; thus, to divide
         // the column by the divisor, we compute: value * e(x) * z, where z = 1 / (x^a - 1) and has
         // already been computed above.
-
-        // set up variables for computing x at every point in the domain
-        let g = E::BaseField::get_root_of_unity(domain_size.trailing_zeros());
-
         batch_iter_mut!(
             result,
             128, // min batch size
             |batch: &mut [E], batch_offset: usize| {
-                let mut x = domain_offset * g.exp((batch_offset as u64).into());
                 for (i, acc_value) in batch.iter_mut().enumerate() {
                     // compute value of e(x) and compute next value of x
+                    let x = domain.get_ce_x_at(batch_offset + i);
                     let e = divisor.evaluate_exemptions_at(x);
-                    x *= g;
                     // determine which value of z corresponds to the current domain point
                     let z = z[i % z.len()];
                     // compute value * e(x) * z and add it to the result
@@ -385,19 +366,28 @@ fn acc_column<E: FieldElement>(
     }
 }
 
-/// Computes evaluations of the divisor's numerator over the domain of the specified size and offset.
-#[allow(clippy::many_single_char_names)]
+/// Computes evaluations of the divisor's numerator over the domain of the specified size and
+/// offset.
 fn get_inv_evaluation<B: StarkField>(
     divisor: &ConstraintDivisor<B>,
-    domain_size: usize,
-    domain_offset: B,
+    domain: &StarkDomain<B>,
 ) -> Vec<B> {
     let numerator = divisor.numerator();
     let a = numerator[0].0 as u64; // numerator degree
     let b = numerator[0].1;
 
-    let n = domain_size / a as usize;
-    let g = B::get_root_of_unity(domain_size.trailing_zeros()).exp(a.into());
+    // this guarantees that we can use get_ce_x_power_at() below but limits execution trace length
+    // to be at most 2^32. in the future, we should revisit this to allow execution traces of
+    // greater length.
+    assert!(
+        a <= u32::MAX as u64,
+        "constraint divisor numerator degree cannot exceed {}, but was {}",
+        u32::MAX,
+        a
+    );
+
+    let n = domain.ce_domain_size() / a as usize;
+    let domain_offset_exp = domain.offset().exp(a.into());
 
     // compute x^a - b for all x
     let mut evaluations = unsafe { uninit_vector(n) };
@@ -405,10 +395,9 @@ fn get_inv_evaluation<B: StarkField>(
         &mut evaluations,
         128, // min batch size
         |batch: &mut [B], batch_offset: usize| {
-            let mut x = domain_offset.exp(a.into()) * g.exp((batch_offset as u64).into());
-            for evaluation in batch.iter_mut() {
+            for (i, evaluation) in batch.iter_mut().enumerate() {
+                let x = domain.get_ce_x_power_at(batch_offset + i, a, domain_offset_exp);
                 *evaluation = x - b;
-                x *= g;
             }
         }
     );
@@ -452,10 +441,10 @@ fn build_transition_constraint_degrees<E: FieldElement>(
 /// The degree is computed as follows:
 /// - First, we divide the polynomial evaluations by the evaluations of transition constraint
 ///   divisor (`div_values`). This is needed because it is possible for the numerator portions of
-///   transition constraints to have a degree which is larger than the size of the evaluation
-///   domain (and thus, interpolating the numerator would yield an incorrect result). However,
-///   once the divisor values are divided out, the degree of the resulting polynomial should be
-///   smaller than the size of the evaluation domain, and thus, we can interpolate safely.
+///   transition constraints to have a degree which is larger than the size of the evaluation domain
+///   (and thus, interpolating the numerator would yield an incorrect result). However, once the
+///   divisor values are divided out, the degree of the resulting polynomial should be smaller than
+///   the size of the evaluation domain, and thus, we can interpolate safely.
 /// - Then, we interpolate the polynomial over the domain specified by `inv_twiddles`.
 /// - And finally, we get the degree from the interpolated polynomial.
 #[cfg(debug_assertions)]
@@ -473,38 +462,6 @@ fn get_transition_poly_degree<E: FieldElement>(
     math::polynom::degree_of(&evaluations)
 }
 
-/// Makes sure that the post-division degree of the polynomial matches the expected degree
-#[cfg(debug_assertions)]
-fn validate_column_degree<B: StarkField, E: FieldElement<BaseField = B>>(
-    column: &[E],
-    divisor: &ConstraintDivisor<B>,
-    domain_offset: B,
-    expected_degree: usize,
-) -> Result<(), ProverError> {
-    // build domain for divisor evaluation, and evaluate it over this domain
-    let div_values = evaluate_divisor(divisor, column.len(), domain_offset);
-
-    // divide column values by the divisor
-    let mut evaluations = column
-        .iter()
-        .zip(div_values)
-        .map(|(&c, d)| c / d)
-        .collect::<Vec<_>>();
-
-    // interpolate evaluations into a polynomial in coefficient form
-    let inv_twiddles = fft::get_inv_twiddles::<B>(evaluations.len());
-    fft::interpolate_poly_with_offset(&mut evaluations, &inv_twiddles, domain_offset);
-    let poly = evaluations;
-
-    if expected_degree != math::polynom::degree_of(&poly) {
-        return Err(ProverError::MismatchedConstraintPolynomialDegree(
-            expected_degree,
-            math::polynom::degree_of(&poly),
-        ));
-    }
-    Ok(())
-}
-
 /// Evaluates constraint divisor over the specified domain. This is similar to [get_inv_evaluation]
 /// function above but uses a more straight-forward but less efficient evaluation methodology and
 /// also does not invert the results.
@@ -516,8 +473,5 @@ fn evaluate_divisor<E: FieldElement>(
 ) -> Vec<E> {
     let g = E::BaseField::get_root_of_unity(domain_size.trailing_zeros());
     let domain = math::get_power_series_with_offset(g, domain_offset, domain_size);
-    domain
-        .into_iter()
-        .map(|x| E::from(divisor.evaluate_at(x)))
-        .collect()
+    domain.into_iter().map(|x| E::from(divisor.evaluate_at(x))).collect()
 }

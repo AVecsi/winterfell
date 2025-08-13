@@ -1,6 +1,15 @@
-use super::{DeserializationError, SliceReader, Vec};
+// Copyright (c) Facebook, Inc. and its affiliates.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+
+use alloc::vec::Vec;
 use core::iter::FusedIterator;
+
 use math::FieldElement;
+use utils::ByteReader;
+
+use super::{DeserializationError, SliceReader};
 
 // CONSTANTS
 // ================================================================================================
@@ -40,22 +49,18 @@ impl<E: FieldElement> Table<E> {
         assert!(num_rows > 0, "number of rows must be greater than 0");
         assert!(
             num_rows < MAX_ROWS,
-            "number of rows cannot exceed {}, but was {}",
-            MAX_ROWS,
-            num_rows
+            "number of rows cannot exceed {MAX_ROWS}, but was {num_rows}"
         );
         assert!(num_cols > 0, "number of columns must be greater than 0");
         assert!(
             num_cols < MAX_ROWS,
-            "number of columns cannot exceed {}, but was {}",
-            MAX_COLS,
-            num_cols
+            "number of columns cannot exceed {MAX_COLS}, but was {num_cols}"
         );
 
         let mut reader = SliceReader::new(bytes);
         let num_elements = num_rows * num_cols;
         Ok(Self {
-            data: E::read_batch_from(&mut reader, num_elements)?,
+            data: reader.read_many(num_elements)?,
             row_width: num_cols,
         })
     }
@@ -80,7 +85,7 @@ impl<E: FieldElement> Table<E> {
     }
 
     /// Returns an iterator over rows of this table.
-    pub fn rows(&self) -> RowIterator<E> {
+    pub fn rows(&self) -> RowIterator<'_, E> {
         RowIterator::new(self)
     }
 
@@ -128,15 +133,15 @@ impl<'a, E: FieldElement> Iterator for RowIterator<'a, E> {
                 let row = self.table.get_row(self.cursor);
                 self.cursor += 1;
                 Some(row)
-            }
+            },
         }
     }
 }
 
-impl<'a, E: FieldElement> ExactSizeIterator for RowIterator<'a, E> {
+impl<E: FieldElement> ExactSizeIterator for RowIterator<'_, E> {
     fn len(&self) -> usize {
         self.table.num_rows()
     }
 }
 
-impl<'a, E: FieldElement> FusedIterator for RowIterator<'a, E> {}
+impl<E: FieldElement> FusedIterator for RowIterator<'_, E> {}

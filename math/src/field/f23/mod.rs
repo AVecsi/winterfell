@@ -20,8 +20,9 @@ use core::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     slice,
 };
+use alloc::{string::ToString, vec::Vec};
 use utils::{
-    collections::Vec, string::ToString, AsBytes, ByteReader, ByteWriter, Deserializable,
+    AsBytes, ByteReader, ByteWriter, Deserializable,
     DeserializationError, Randomizable, Serializable,
 };
 
@@ -160,22 +161,20 @@ impl FieldElement for BaseElement {
         Ok(slice::from_raw_parts(p as *const Self, len))
     }
 
-    fn zeroed_vector(n: usize) -> Vec<Self> {
-        // this uses a specialized vector initialization code which requests zero-filled memory
-        // from the OS; unfortunately, this works only for built-in types and we can't use
-        // Self::ZERO here as much less efficient initialization procedure will be invoked.
-        // We also use u32 to make sure the memory is aligned correctly for our element size.
-        let result = vec![0u32; n];
-
-        // translate a zero-filled vector of u32 into a vector of base field elements
-        let mut v = core::mem::ManuallyDrop::new(result);
-        let p = v.as_mut_ptr();
-        let len = v.len();
-        let cap = v.capacity();
-        unsafe { Vec::from_raw_parts(p as *mut Self, len, cap) }
+    fn slice_as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
+        elements
     }
-
-    fn as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
+    
+    const EXTENSION_DEGREE: usize = 1;
+    
+    fn base_element(&self, i: usize) -> Self::BaseField {
+        match i {
+            0 => *self,
+            _ => panic!("element index must be 0, but was {i}"),
+        }
+    }
+    
+    fn slice_from_base_elements(elements: &[Self::BaseField]) -> &[Self] {
         elements
     }
 }
@@ -401,7 +400,7 @@ impl ExtensibleField<6> for BaseElement {
         let c = <CubeExtension<BaseElement> as ExtensibleField<2>>::mul([a0, a1], [b0, b1]);
         let mut y: [BaseElement; 6] = Default::default();
         y.copy_from_slice(
-            <CubeExtension<BaseElement> as FieldElement>::as_base_elements(&[c[0], c[1]]),
+            <CubeExtension<BaseElement> as FieldElement>::slice_as_base_elements(&[c[0], c[1]]),
         );
         y
     }
@@ -423,7 +422,7 @@ impl ExtensibleField<6> for BaseElement {
         let c = <CubeExtension<BaseElement> as ExtensibleField<2>>::frobenius([a0, a1]);
         let mut y: [BaseElement; 6] = Default::default();
         y.copy_from_slice(
-            <CubeExtension<BaseElement> as FieldElement>::as_base_elements(&[c[0], c[1]]),
+            <CubeExtension<BaseElement> as FieldElement>::slice_as_base_elements(&[c[0], c[1]]),
         );
         y
     }

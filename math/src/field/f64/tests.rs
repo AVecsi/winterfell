@@ -3,12 +3,13 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use super::{BaseElement, DeserializationError, FieldElement, Serializable, StarkField, M};
-use crate::field::{CubeExtension, ExtensionOf, QuadExtension};
-use core::convert::TryFrom;
+use alloc::vec::Vec;
 use num_bigint::BigUint;
 use proptest::prelude::*;
 use rand_utils::{rand_value, rand_vector};
+
+use super::{BaseElement, DeserializationError, FieldElement, Serializable, StarkField, M};
+use crate::field::{CubeExtension, ExtensionOf, QuadExtension};
 
 // MANUAL TESTS
 // ================================================================================================
@@ -20,10 +21,7 @@ fn add() {
     assert_eq!(r, r + BaseElement::ZERO);
 
     // test addition within bounds
-    assert_eq!(
-        BaseElement::new(5),
-        BaseElement::new(2) + BaseElement::new(3)
-    );
+    assert_eq!(BaseElement::new(5), BaseElement::new(2) + BaseElement::new(3));
 
     // test overflow
     let t = BaseElement::new(M - 1);
@@ -38,10 +36,7 @@ fn sub() {
     assert_eq!(r, r - BaseElement::ZERO);
 
     // test subtraction within bounds
-    assert_eq!(
-        BaseElement::new(2),
-        BaseElement::new(5) - BaseElement::new(3)
-    );
+    assert_eq!(BaseElement::new(2), BaseElement::new(5) - BaseElement::new(3));
 
     // test underflow
     let expected = BaseElement::new(M - 2);
@@ -51,7 +46,7 @@ fn sub() {
 #[test]
 fn neg() {
     assert_eq!(BaseElement::ZERO, -BaseElement::ZERO);
-    assert_eq!(BaseElement::from(super::M - 1), -BaseElement::ONE);
+    assert_eq!(BaseElement::new(super::M - 1), -BaseElement::ONE);
 
     let r: BaseElement = rand_value();
     assert_eq!(r, -(-r));
@@ -65,23 +60,29 @@ fn mul() {
     assert_eq!(r, r * BaseElement::ONE);
 
     // test multiplication within bounds
-    assert_eq!(
-        BaseElement::from(15u8),
-        BaseElement::from(5u8) * BaseElement::from(3u8)
-    );
+    assert_eq!(BaseElement::from(15u8), BaseElement::from(5u8) * BaseElement::from(3u8));
 
     // test overflow
     let m = BaseElement::MODULUS;
-    let t = BaseElement::from(m - 1);
+    let t = BaseElement::new(m - 1);
     assert_eq!(BaseElement::ONE, t * t);
-    assert_eq!(BaseElement::from(m - 2), t * BaseElement::from(2u8));
-    assert_eq!(BaseElement::from(m - 4), t * BaseElement::from(4u8));
+    assert_eq!(BaseElement::new(m - 2), t * BaseElement::from(2u8));
+    assert_eq!(BaseElement::new(m - 4), t * BaseElement::from(4u8));
 
+    #[allow(clippy::manual_div_ceil)]
     let t = (m + 1) / 2;
-    assert_eq!(
-        BaseElement::ONE,
-        BaseElement::from(t) * BaseElement::from(2u8)
-    );
+    assert_eq!(BaseElement::ONE, BaseElement::new(t) * BaseElement::from(2u8));
+}
+
+#[test]
+fn mul_small() {
+    // test overflow
+    let m = BaseElement::MODULUS;
+    let t = BaseElement::new(m - 1);
+    let a = u32::MAX;
+    let expected = BaseElement::new(a as u64) * t;
+
+    assert_eq!(expected, t.mul_small(a));
 }
 
 #[test]
@@ -126,6 +127,11 @@ fn element_as_int() {
     let v = u64::MAX;
     let e = BaseElement::new(v);
     assert_eq!(v % super::M, e.as_int());
+
+    let e1 = BaseElement::new(0);
+    let e2 = BaseElement::new(M);
+    assert_eq!(e1.as_int(), e2.as_int());
+    assert_eq!(e1.as_int(), 0);
 }
 
 #[test]
@@ -156,13 +162,6 @@ fn get_root_of_unity() {
 
 // SERIALIZATION AND DESERIALIZATION
 // ------------------------------------------------------------------------------------------------
-
-#[test]
-fn from_u128() {
-    let v = u128::MAX;
-    let e = BaseElement::from(v);
-    assert_eq!((v % super::M as u128) as u64, e.as_int());
-}
 
 #[test]
 fn try_from_slice() {
@@ -229,28 +228,13 @@ fn bytes_as_elements() {
     assert!(matches!(result, Err(DeserializationError::InvalidValue(_))));
 }
 
-// INITIALIZATION
-// ------------------------------------------------------------------------------------------------
-
-#[test]
-fn zeroed_vector() {
-    let result = BaseElement::zeroed_vector(4);
-    assert_eq!(4, result.len());
-    for element in result.into_iter() {
-        assert_eq!(BaseElement::ZERO, element);
-    }
-}
-
 // QUADRATIC EXTENSION
 // ------------------------------------------------------------------------------------------------
 #[test]
 fn quad_mul() {
     // identity
     let r: QuadExtension<BaseElement> = rand_value();
-    assert_eq!(
-        <QuadExtension<BaseElement>>::ZERO,
-        r * <QuadExtension<BaseElement>>::ZERO
-    );
+    assert_eq!(<QuadExtension<BaseElement>>::ZERO, r * <QuadExtension<BaseElement>>::ZERO);
     assert_eq!(r, r * <QuadExtension<BaseElement>>::ONE);
 
     // test multiplication within bounds
@@ -317,10 +301,7 @@ fn quad_conjugate() {
 fn cube_mul() {
     // identity
     let r: CubeExtension<BaseElement> = rand_value();
-    assert_eq!(
-        <CubeExtension<BaseElement>>::ZERO,
-        r * <CubeExtension<BaseElement>>::ZERO
-    );
+    assert_eq!(<CubeExtension<BaseElement>>::ZERO, r * <CubeExtension<BaseElement>>::ZERO);
     assert_eq!(r, r * <CubeExtension<BaseElement>>::ONE);
 
     // test multiplication within bounds
@@ -394,8 +375,8 @@ proptest! {
 
     #[test]
     fn add_proptest(a in any::<u64>(), b in any::<u64>()) {
-        let v1 = BaseElement::from(a);
-        let v2 = BaseElement::from(b);
+        let v1 = BaseElement::new(a);
+        let v2 = BaseElement::new(b);
         let result = v1 + v2;
 
         let expected = (((a as u128) + (b as u128)) % (super::M as u128)) as u64;
@@ -404,8 +385,8 @@ proptest! {
 
     #[test]
     fn sub_proptest(a in any::<u64>(), b in any::<u64>()) {
-        let v1 = BaseElement::from(a);
-        let v2 = BaseElement::from(b);
+        let v1 = BaseElement::new(a);
+        let v2 = BaseElement::new(b);
         let result = v1 - v2;
 
         let a = a % super::M;
@@ -417,7 +398,7 @@ proptest! {
 
     #[test]
     fn neg_proptest(a in any::<u64>()) {
-        let v = BaseElement::from(a);
+        let v = BaseElement::new(a);
         let expected = super::M - (a % super::M);
 
         prop_assert_eq!(expected, (-v).as_int());
@@ -425,8 +406,8 @@ proptest! {
 
     #[test]
     fn mul_proptest(a in any::<u64>(), b in any::<u64>()) {
-        let v1 = BaseElement::from(a);
-        let v2 = BaseElement::from(b);
+        let v1 = BaseElement::new(a);
+        let v2 = BaseElement::new(b);
         let result = v1 * v2;
 
         let expected = (((a as u128) * (b as u128)) % super::M as u128) as u64;
@@ -434,8 +415,18 @@ proptest! {
     }
 
     #[test]
+    fn mul_small_proptest(a in any::<u64>(), b in any::<u32>()) {
+        let v1 = BaseElement::new(a);
+        let v2 = b;
+        let result = v1.mul_small(v2);
+
+        let expected = (((a as u128) * (b as u128)) % super::M as u128) as u64;
+        prop_assert_eq!(expected, result.as_int());
+    }
+
+    #[test]
     fn double_proptest(x in any::<u64>()) {
-        let v = BaseElement::from(x);
+        let v = BaseElement::new(x);
         let result = v.double();
 
         let expected = (((x as u128) * 2) % super::M as u128) as u64;
@@ -444,7 +435,7 @@ proptest! {
 
     #[test]
     fn exp_proptest(a in any::<u64>(), b in any::<u64>()) {
-        let result = BaseElement::from(a).exp(b);
+        let result = BaseElement::new(a).exp(b);
 
         let b = BigUint::from(b);
         let m = BigUint::from(super::M);
@@ -454,7 +445,7 @@ proptest! {
 
     #[test]
     fn inv_proptest(a in any::<u64>()) {
-        let a = BaseElement::from(a);
+        let a = BaseElement::new(a);
         let b = a.inv();
 
         let expected = if a == BaseElement::ZERO { BaseElement::ZERO } else { BaseElement::ONE };
@@ -467,17 +458,11 @@ proptest! {
         prop_assert_eq!(a % super::M, e.as_int());
     }
 
-    #[test]
-    fn from_u128_proptest(v in any::<u128>()) {
-        let e = BaseElement::from(v);
-        assert_eq!((v % super::M as u128) as u64, e.as_int());
-    }
-
     // QUADRATIC EXTENSION
     // --------------------------------------------------------------------------------------------
     #[test]
     fn quad_mul_inv_proptest(a0 in any::<u64>(), a1 in any::<u64>()) {
-        let a = QuadExtension::<BaseElement>::new(BaseElement::from(a0), BaseElement::from(a1));
+        let a = QuadExtension::<BaseElement>::new(BaseElement::new(a0), BaseElement::new(a1));
         let b = a.inv();
 
         let expected = if a == QuadExtension::<BaseElement>::ZERO {
@@ -488,11 +473,19 @@ proptest! {
         prop_assert_eq!(expected, a * b);
     }
 
+    #[test]
+    fn quad_square_proptest(a0 in any::<u64>(), a1 in any::<u64>()) {
+        let a = QuadExtension::<BaseElement>::new(BaseElement::new(a0), BaseElement::new(a1));
+        let expected = a * a;
+
+        prop_assert_eq!(expected, a.square());
+    }
+
     // CUBIC EXTENSION
     // --------------------------------------------------------------------------------------------
     #[test]
     fn cube_mul_inv_proptest(a0 in any::<u64>(), a1 in any::<u64>(), a2 in any::<u64>()) {
-        let a = CubeExtension::<BaseElement>::new(BaseElement::from(a0), BaseElement::from(a1), BaseElement::from(a2));
+        let a = CubeExtension::<BaseElement>::new(BaseElement::new(a0), BaseElement::new(a1), BaseElement::new(a2));
         let b = a.inv();
 
         let expected = if a == CubeExtension::<BaseElement>::ZERO {
@@ -501,5 +494,13 @@ proptest! {
             CubeExtension::<BaseElement>::ONE
         };
         prop_assert_eq!(expected, a * b);
+    }
+
+    #[test]
+    fn cube_square_proptest(a0 in any::<u64>(), a1 in any::<u64>(), a2 in any::<u64>()) {
+        let a = CubeExtension::<BaseElement>::new(BaseElement::new(a0), BaseElement::new(a1), BaseElement::new(a2));
+        let expected = a * a;
+
+        prop_assert_eq!(expected, a.square());
     }
 }

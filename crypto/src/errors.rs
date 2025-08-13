@@ -33,49 +33,41 @@ impl fmt::Display for MerkleTreeError {
             Self::TooFewLeaves(expected, actual) => {
                 write!(
                     f,
-                    "a Merkle tree must contain at least {} leaves, but {} were provided",
-                    expected, actual
+                    "a Merkle tree must contain at least {expected} leaves, but {actual} were provided"
                 )
-            }
+            },
             Self::NumberOfLeavesNotPowerOfTwo(num_leaves) => {
-                write!(
-                    f,
-                    "number of leaves must be a power of two, but {} were provided",
-                    num_leaves
-                )
-            }
+                write!(f, "number of leaves must be a power of two, but {num_leaves} were provided")
+            },
             Self::LeafIndexOutOfBounds(expected, actual) => {
-                write!(
-                    f,
-                    "a leaf index cannot exceed {}, but was {}",
-                    expected, actual
-                )
-            }
+                write!(f, "a leaf index cannot exceed {expected}, but was {actual}")
+            },
             Self::DuplicateLeafIndex => {
                 write!(f, "repeating indexes detected")
-            }
+            },
             Self::TooFewLeafIndexes => {
                 write!(f, "at least one leaf index must be provided")
-            }
+            },
             Self::TooManyLeafIndexes(max_indexes, num_indexes) => {
                 write!(
                     f,
-                    "number of leaf indexes cannot exceed {}, but was {} provided",
-                    max_indexes, num_indexes
+                    "number of leaf indexes cannot exceed {max_indexes}, but {num_indexes} was provided"
                 )
-            }
+            },
             Self::InvalidProof => {
                 write!(f, "Merkle proof is invalid")
-            }
+            },
         }
     }
 }
+
+impl core::error::Error for MerkleTreeError {}
 
 // RANDOM COIN ERROR
 // ================================================================================================
 
 /// Defines errors which can occur when drawing values from a random coin.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RandomCoinError {
     /// A valid element could not be drawn from the field after the specified number of tries.
     FailedToDrawFieldElement(usize),
@@ -88,19 +80,16 @@ impl fmt::Display for RandomCoinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::FailedToDrawFieldElement(num_tries) => {
-                write!(
-                    f,
-                    "failed to generate a valid field element after {} tries",
-                    num_tries
-                )
-            }
+                write!(f, "failed to generate a valid field element after {num_tries} tries")
+            },
             Self::FailedToDrawIntegers(num_expected, num_actual, num_tries) => {
                 write!(
                     f,
-                    "needed to draw {} integers from a domain, but drew only {} after {} tries",
-                    num_expected, num_actual, num_tries
+                    "needed to draw {num_expected} integers from a domain, but drew only {num_actual} after {num_tries} tries"
                 )
-            }
+            },
         }
     }
 }
+
+impl core::error::Error for RandomCoinError {}

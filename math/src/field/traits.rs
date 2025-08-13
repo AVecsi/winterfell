@@ -3,17 +3,16 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use alloc::vec::Vec;
 use core::{
-    convert::TryFrom,
     fmt::{Debug, Display},
     ops::{
         Add, AddAssign, BitAnd, Div, DivAssign, Mul, MulAssign, Neg, Shl, Shr, ShrAssign, Sub,
         SubAssign,
     },
 };
-use utils::{
-    collections::Vec, AsBytes, Deserializable, DeserializationError, Randomizable, Serializable,
-};
+
+use utils::{AsBytes, Deserializable, DeserializationError, Randomizable, Serializable};
 
 // FIELD ELEMENT
 // ================================================================================================
@@ -46,11 +45,11 @@ pub trait FieldElement:
     + MulAssign<Self>
     + DivAssign<Self>
     + Neg<Output = Self>
-    + From<u128>
-    + From<u64>
     + From<u32>
     + From<u16>
     + From<u8>
+    + TryFrom<u64>
+    + TryFrom<u128>
     + for<'a> TryFrom<&'a [u8]>
     + ExtensionOf<<Self as FieldElement>::BaseField>
     + AsBytes
@@ -74,6 +73,10 @@ pub trait FieldElement:
     /// Base field type for this finite field. For prime fields, `BaseField` should be set
     /// to `Self`.
     type BaseField: StarkField;
+
+    /// Extension degree of this field with respect to `Self::BaseField`. For prime fields,
+    /// extension degree should be set to 1.
+    const EXTENSION_DEGREE: usize;
 
     /// Number of bytes needed to encode an element
     const ELEMENT_BYTES: usize;
@@ -114,6 +117,13 @@ pub trait FieldElement:
     /// Exponentiates this field element by `power` parameter.
     #[must_use]
     fn exp(self, power: Self::PositiveInteger) -> Self {
+        self.exp_vartime(power)
+    }
+
+    /// Exponentiates this field element by `power` parameter.
+    /// This function is expressly variable time, to speed-up verifier computations.
+    #[must_use]
+    fn exp_vartime(self, power: Self::PositiveInteger) -> Self {
         let mut r = Self::ONE;
         let mut b = self;
         let mut p = power;
@@ -164,6 +174,31 @@ pub trait FieldElement:
         prod.truncate(n);
         prod
     }
+    // BASE ELEMENT CONVERSIONS
+    // --------------------------------------------------------------------------------------------
+
+    /// Return base filed element component of this field element at the specified index `i`.
+    ///
+    /// # Panics
+    /// Panics if the specified index is greater than or equal to `Self::EXTENSION_DEGREE`.
+    fn base_element(&self, i: usize) -> Self::BaseField;
+
+    /// Converts a slice of field elements into a slice of elements in the underlying base field.
+    ///
+    /// For base STARK fields, the input and output slices are the same. For extension fields, the
+    /// output slice will contain decompositions of each extension element into underlying base
+    /// field elements.
+    fn slice_as_base_elements(elements: &[Self]) -> &[Self::BaseField];
+
+    /// Convert a slice of base field elements into a slice of field elements.
+    ///
+    /// For base STARK fields, the input and output slices are the same. For extension fields, the
+    /// output slice will contain a composition of base field elements into extension field
+    /// elements.
+    ///
+    /// # Panics
+    /// Panics if the the length of the provided slice is not divisible by `Self::EXTENSION_DEGREE`.
+    fn slice_from_base_elements(elements: &[Self::BaseField]) -> &[Self];
 
     // SERIALIZATION / DESERIALIZATION
     // --------------------------------------------------------------------------------------------
@@ -190,23 +225,6 @@ pub trait FieldElement:
     /// This function is unsafe because it does not check whether underlying bytes represent valid
     /// field elements according to their internal representation.
     unsafe fn bytes_as_elements(bytes: &[u8]) -> Result<&[Self], DeserializationError>;
-
-    // UTILITIES
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns a vector of length `n` initialized with all ZERO elements.
-    ///
-    /// Specialized implementations of this function may be faster than the generic implementation.
-    fn zeroed_vector(n: usize) -> Vec<Self> {
-        vec![Self::ZERO; n]
-    }
-
-    /// Converts a list of field elements into a list of elements in the underlying base field.
-    ///
-    /// For base STARK fields, the input and output lists are the same. For extension field, the
-    /// output list will contain decompositions of each extension element into underlying base
-    /// elements.
-    fn as_base_elements(elements: &[Self]) -> &[Self::BaseField];
 }
 
 // STARK FIELD
@@ -218,6 +236,9 @@ pub trait FieldElement:
 /// the modulus of the field should be a prime number of the form `k` * 2^`n` + 1 (a Proth prime),
 /// where `n` is relatively large (e.g., greater than 32).
 pub trait StarkField: FieldElement<BaseField = Self> {
+    // CONSTANTS
+    //----------------------------------------------------------------------------------------------
+
     /// Prime modulus of the field. Must be of the form `k` * 2^`n` + 1 (a Proth prime).
     /// This ensures that the field has high 2-adicity.
     const MODULUS: Self::PositiveInteger;
@@ -235,32 +256,55 @@ pub trait StarkField: FieldElement<BaseField = Self> {
     /// computed as Self::GENERATOR^`k`.
     const TWO_ADIC_ROOT_OF_UNITY: Self;
 
-    /// Returns the root of unity of order 2^`n`.
-    ///
-    /// # Panics
-    /// Panics if the root of unity for the specified order does not exist in this field.
-    fn get_root_of_unity(n: u32) -> Self {
-        assert!(n != 0, "cannot get root of unity for n = 0");
-        assert!(
-            n <= Self::TWO_ADICITY,
-            "order cannot exceed 2^{}",
-            Self::TWO_ADICITY
-        );
-        let power = Self::PositiveInteger::from(1u32) << (Self::TWO_ADICITY - n);
-        Self::TWO_ADIC_ROOT_OF_UNITY.exp(power)
-    }
+    // REQUIRED METHODS
+    //----------------------------------------------------------------------------------------------
 
     /// Returns byte representation of the field modulus in little-endian byte order.
     fn get_modulus_le_bytes() -> Vec<u8>;
 
     /// Returns a canonical integer representation of this field element.
     fn as_int(&self) -> Self::PositiveInteger;
+
+    // PROVIDED METHODS
+    //----------------------------------------------------------------------------------------------
+
+    /// Returns the root of unity of order 2^`n`.
+    ///
+    /// # Panics
+    /// Panics if the root of unity for the specified order does not exist in this field.
+    fn get_root_of_unity(n: u32) -> Self {
+        assert!(n != 0, "cannot get root of unity for n = 0");
+        assert!(n <= Self::TWO_ADICITY, "order cannot exceed 2^{}", Self::TWO_ADICITY);
+        let power = Self::PositiveInteger::from(1u32) << (Self::TWO_ADICITY - n);
+        Self::TWO_ADIC_ROOT_OF_UNITY.exp(power)
+    }
+
+    /// Converts a slice of bytes into a field element. Pads the slice if it is smaller than the
+    /// number of bytes needed to represent an element.
+    ///
+    /// # Panics
+    /// Panics if
+    /// - the length of `bytes` is greater than the number of bytes needed to encode an element.
+    /// - the value of the bytes is not a valid field element after padding
+    fn from_bytes_with_padding(bytes: &[u8]) -> Self {
+        assert!(bytes.len() < Self::ELEMENT_BYTES);
+
+        let mut buf = bytes.to_vec();
+        buf.resize(Self::ELEMENT_BYTES, 0);
+
+        let element = match Self::try_from(buf.as_slice()) {
+            Ok(element) => element,
+            Err(_) => panic!("element deserialization failed"),
+        };
+
+        element
+    }
 }
 
 // EXTENSIBLE FIELD
 // ================================================================================================
 
-/// Defines basic arithmetic in an extension of a StarkField of a given degree.
+/// Defines basic arithmetic in an extension of a [StarkField] of a given degree.
 ///
 /// This trait defines how to perform multiplication and compute a Frobenius automorphisms of an
 /// element in an extension of degree N for a given [StarkField]. It as assumed that an element in
@@ -271,6 +315,11 @@ pub trait StarkField: FieldElement<BaseField = Self> {
 pub trait ExtensibleField<const N: usize>: FieldElement {
     /// Returns a product of `a` and `b` in the field defined by this extension.
     fn mul(a: [Self; N], b: [Self; N]) -> [Self; N];
+
+    /// Returns the square of `a` in the field defined by this extension.
+    fn square(a: [Self; N]) -> [Self; N] {
+        <Self as ExtensibleField<N>>::mul(a, a)
+    }
 
     /// Returns a product of `a` and `b` in the field defined by this extension. `b` represents
     /// an element in the base field.
@@ -292,9 +341,9 @@ pub trait ExtensibleField<const N: usize>: FieldElement {
 ///
 /// Currently, this implies the following:
 /// - An element in the base field can be converted into an element in the extension field.
-/// - An element in the extension field can be multiplied by a base field element directly. This
-///   can be used for optimization purposes as such multiplication could be much more efficient
-///   than multiplication of two extension field elements.
+/// - An element in the extension field can be multiplied by a base field element directly. This can
+///   be used for optimization purposes as such multiplication could be much more efficient than
+///   multiplication of two extension field elements.
 pub trait ExtensionOf<E: FieldElement>: From<E> {
     fn mul_base(self, other: E) -> Self;
 }
@@ -304,5 +353,25 @@ impl<E: FieldElement> ExtensionOf<E> for E {
     #[inline(always)]
     fn mul_base(self, other: E) -> Self {
         self * other
+    }
+}
+
+// TO ELEMENTS
+// ================================================================================================
+
+/// Defines how to convert a struct to a vector of field elements.
+pub trait ToElements<E: FieldElement> {
+    fn to_elements(&self) -> Vec<E>;
+}
+
+impl<E: FieldElement> ToElements<E> for () {
+    fn to_elements(&self) -> Vec<E> {
+        Vec::new()
+    }
+}
+
+impl<E: FieldElement> ToElements<E> for E {
+    fn to_elements(&self) -> Vec<E> {
+        vec![*self]
     }
 }

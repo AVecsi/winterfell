@@ -53,11 +53,11 @@
 //! [Polynomials](polynom) module implements basic polynomial operations such as:
 //!
 //! * Evaluation of a polynomial at a single or multiple point.
-//! * Interpolation of a polynomial from a set of points (using
-//!   [Lagrange](https://en.wikipedia.org/wiki/Lagrange_polynomial) interpolation).
+//! * Interpolation of a polynomial from a set of points (using [Lagrange](https://en.wikipedia.org/wiki/Lagrange_polynomial)
+//!   interpolation).
 //! * Addition, multiplication, subtraction, and division of polynomials.
-//! * Synthetic polynomial division (using
-//!   [Ruffini's](https://en.wikipedia.org/wiki/Ruffini%27s_rule) method).
+//! * Synthetic polynomial division (using [Ruffini's](https://en.wikipedia.org/wiki/Ruffini%27s_rule)
+//!   method).
 //!
 //! # Fast Fourier transform
 //! [FFT](fft) module contains operations for computing Fast Fourier transform in a prime
@@ -87,9 +87,8 @@
 //!
 //! Number of threads can be configured via `RAYON_NUM_THREADS` environment variable
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
-#[cfg(not(feature = "std"))]
 #[macro_use]
 extern crate alloc;
 
@@ -97,7 +96,7 @@ pub mod fft;
 pub mod polynom;
 
 mod field;
-pub use field::{ExtensibleField, ExtensionOf, FieldElement, StarkField};
+pub use field::{ExtensibleField, ExtensionOf, FieldElement, StarkField, ToElements};
 pub mod fields {
     //! Finite field implementations.
     //!
@@ -116,5 +115,5 @@ pub mod fields {
 
 mod utils;
 pub use crate::utils::{
-    add_in_place, batch_inversion, get_power_series, get_power_series_with_offset, log2, mul_acc,
+    add_in_place, batch_inversion, get_power_series, get_power_series_with_offset, mul_acc,
 };
