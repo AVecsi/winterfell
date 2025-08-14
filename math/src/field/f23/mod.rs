@@ -51,6 +51,7 @@ const ELEMENT_BYTES: usize = 3;
 ///
 /// Internal values are stored in the range [0, 2M). The backing type is `u32`.
 #[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
 pub struct BaseElement(u32);
 impl BaseElement {
     /// Creates a new field element from the provided `value`; the value is converted into

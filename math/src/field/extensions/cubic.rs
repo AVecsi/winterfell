@@ -3,8 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use super::{ExtensibleField, ExtensionOf, FieldElement};
-use crate::StarkField;
 use alloc::string::{String, ToString};
 use core::{
     fmt,
@@ -19,6 +17,10 @@ use utils::{
     Serializable, SliceReader,
 };
 
+use crate::StarkField;
+
+use super::{ExtensibleField, ExtensionOf, FieldElement};
+
 // QUADRATIC EXTENSION FIELD
 // ================================================================================================
 
@@ -29,12 +31,17 @@ use utils::{
 /// field elements.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct CubeExtension<B: ExtensibleField<3> + StarkField>(B, B, B);
 
 impl<B: ExtensibleField<3> + StarkField> CubeExtension<B> {
     /// Returns a new extension element instantiated from the provided base elements.
-    pub const fn new(a: B, b: B, c: B) -> Self {
-        Self(a, b, c)
+    pub fn new(a: B, b: B, c: B) -> Self {
+        let mut res = Self::ZERO;
+        res.0 = a;
+        res.1 = b;
+        res.2 = c;
+        res
     }
 
     /// Returns true if the base field specified by B type parameter supports cubic extensions.
@@ -319,7 +326,7 @@ impl<B: ExtensibleField<3> + StarkField> TryFrom<u128> for CubeExtension<B> {
     }
 }
 
-impl<B: ExtensibleField<3> + StarkField> TryFrom<&'_ [u8]> for CubeExtension<B> {
+impl<'a, B: ExtensibleField<3> + StarkField> TryFrom<&'a [u8]> for CubeExtension<B> {
     type Error = DeserializationError;
 
     /// Converts a slice of bytes into a field element; returns error if the value encoded in bytes

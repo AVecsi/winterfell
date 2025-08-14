@@ -36,8 +36,11 @@ pub struct SexticExtension<B: ExtensibleField<3> + ExtensibleField<6> + StarkFie
 
 impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> SexticExtension<B> {
     /// Returns a new extension element instantiated from the provided base elements.
-    pub fn new(a: CubeExtension<B>, b: CubeExtension<B>) -> Self {
-        Self(a, b)
+    pub fn new(c0: CubeExtension<B>, c1: CubeExtension<B>) -> Self {
+        let mut res = Self::ZERO;
+        res.0 = c0;
+        res.1 = c1;
+        res
     }
 
     /// Returns true if the base field specified by B type parameter supports sextic extensions.
@@ -65,6 +68,8 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> SexticExtension<B>
 impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> FieldElement for SexticExtension<B> {
     type PositiveInteger = B::PositiveInteger;
     type BaseField = B;
+
+    const EXTENSION_DEGREE: usize = 6;
 
     const ELEMENT_BYTES: usize = 2 * <CubeExtension<B> as FieldElement>::ELEMENT_BYTES;
     const IS_CANONICAL: bool = <CubeExtension<B> as FieldElement>::IS_CANONICAL;
@@ -100,6 +105,23 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> FieldElement for S
         )
     }
 
+    fn base_element(&self, i: usize) -> Self::BaseField {
+    match i {
+        0..=2 => self.0.base_element(i),      // inside first CubeExtension
+        3..=5 => self.1.base_element(i - 3),  // inside second CubeExtension
+        _ => panic!(
+            "element index must be smaller than {}, but was {i}",
+            Self::EXTENSION_DEGREE
+        ),
+    }
+}
+
+    fn slice_as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
+        let ptr = elements.as_ptr();
+        let len = elements.len() * 2 * 3;
+        unsafe { slice::from_raw_parts(ptr as *const Self::BaseField, len) }
+    }
+
     fn elements_as_bytes(elements: &[Self]) -> &[u8] {
         unsafe {
             slice::from_raw_parts(
@@ -128,18 +150,6 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> FieldElement for S
         }
 
         Ok(slice::from_raw_parts(p as *const Self, len))
-    }
-
-    fn slice_as_base_elements(elements: &[Self]) -> &[Self::BaseField] {
-        let ptr = elements.as_ptr();
-        let len = elements.len() * 2 * 3;
-        unsafe { slice::from_raw_parts(ptr as *const Self::BaseField, len) }
-    }
-    
-    const EXTENSION_DEGREE: usize = 6;
-    
-    fn base_element(&self, i: usize) -> Self::BaseField {
-        todo!()
     }
     
     fn slice_from_base_elements(elements: &[Self::BaseField]) -> &[Self] {
@@ -496,6 +506,8 @@ mod tests {
         let mut expected = vec![];
         expected.extend_from_slice(&source[0].as_bytes());
         expected.extend_from_slice(&source[1].as_bytes());
+
+        let test = SexticExtension::<BaseElement>::elements_as_bytes(&source);
 
         assert_eq!(
             expected,

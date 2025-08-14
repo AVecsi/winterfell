@@ -63,6 +63,7 @@ const G: u64 = 4421547261963328785;
 #[derive(Copy, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[cfg_attr(feature = "serde", serde(try_from = "u64", into = "u64"))]
+#[repr(C)]
 pub struct BaseElement(u64);
 
 impl BaseElement {

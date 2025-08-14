@@ -9,8 +9,7 @@ members = [
   "air",
   "prover",
   "verifier",
-  "winterfell",
-  "examples"
+  "winterfell"
 ]
 resolver = "2"
 

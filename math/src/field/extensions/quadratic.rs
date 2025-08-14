@@ -3,8 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use super::{ExtensibleField, ExtensionOf, FieldElement};
-use crate::StarkField;
 use alloc::string::{String, ToString};
 use core::{
     fmt,
@@ -19,6 +17,10 @@ use utils::{
     Serializable, SliceReader,
 };
 
+use crate::StarkField;
+
+use super::{ExtensibleField, ExtensionOf, FieldElement};
+
 // QUADRATIC EXTENSION FIELD
 // ================================================================================================
 
@@ -29,12 +31,16 @@ use utils::{
 /// elements.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-pub struct QuadExtension<B: ExtensibleField<2> + StarkField>(B, B);
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+pub struct QuadExtension<B: ExtensibleField<2>>(B, B);
 
 impl<B: ExtensibleField<2> + StarkField> QuadExtension<B> {
     /// Returns a new extension element instantiated from the provided base elements.
     pub const fn new(a: B, b: B) -> Self {
-        Self(a, b)
+        let mut res = Self::ZERO;
+        res.0 = a;
+        res.1 = b;
+        res
     }
 
     /// Returns true if the base field specified by B type parameter supports quadratic extensions.
@@ -270,7 +276,6 @@ impl<B: ExtensibleField<2> + StarkField> From<B> for QuadExtension<B> {
     }
 }
 
-
 impl<B: ExtensibleField<2> + StarkField> From<u32> for QuadExtension<B> {
     fn from(value: u32) -> Self {
         Self(B::from(value), B::ZERO)
@@ -315,7 +320,7 @@ impl<B: ExtensibleField<2> + StarkField> TryFrom<u128> for QuadExtension<B> {
     }
 }
 
-impl<B: ExtensibleField<2> + StarkField> TryFrom<&'_ [u8]> for QuadExtension<B> {
+impl<'a, B: ExtensibleField<2> + StarkField> TryFrom<&'a [u8]> for QuadExtension<B> {
     type Error = DeserializationError;
 
     /// Converts a slice of bytes into a field element; returns error if the value encoded in bytes

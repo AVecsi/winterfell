@@ -55,6 +55,7 @@ const ELEMENT_BYTES: usize = core::mem::size_of::<u128>();
 #[derive(Copy, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
+#[repr(C)]
 pub struct BaseElement(u128);
 
 impl BaseElement {
