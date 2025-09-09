@@ -345,9 +345,9 @@ impl Serializable for ProofOptions {
         target.write_u8(self.fri_remainder_max_degree);
         target.write(self.batching_constraints);
         target.write(self.batching_deep);
+        target.write_bool(self.is_zk);
         target.write_u8(self.partition_options.num_partitions);
         target.write_u8(self.partition_options.hash_rate);
-        target.write_bool(self.is_zk)
     }
 }
 

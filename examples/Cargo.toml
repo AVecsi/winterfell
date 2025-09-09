@@ -26,17 +26,17 @@ default = ["std"]
 std = ["core-utils/std", "hex/std", "rand-utils", "winterfell/std"]
 
 [dependencies]
-air = { version = "0.11", path = "../air", package = "winter-air", default-features = false }
+air = { version = "0.13", path = "../air", package = "winter-air", default-features = false }
 blake3 = { version = "1.5", default-features = false }
-core-utils = { version = "0.11", path = "../utils/core", package = "winter-utils", default-features = false }
+core-utils = { version = "0.13", path = "../utils/core", package = "winter-utils", default-features = false }
 hex = { version = "0.4", optional = true }
 rand =  { version = "0.8" }
-rand-utils = { version = "0.11", path = "../utils/rand", package = "winter-rand-utils", optional = true }
+rand-utils = { version = "0.13", path = "../utils/rand", package = "winter-rand-utils", optional = true }
 structopt = { version = "0.3", default-features = false }
 tracing = { version = "0.1", default-features = false }
 tracing-forest = { version = "0.1", features = ["ansi", "smallvec"], optional = true }
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }
-winterfell = { version = "0.11", path = "../winterfell", default-features = false }
+winterfell = { version = "0.13", path = "../winterfell", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 
 [dev-dependencies]

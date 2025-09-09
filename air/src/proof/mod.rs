@@ -163,7 +163,7 @@ impl Proof {
                     1,
                     BatchingMethod::Linear,
                     BatchingMethod::Linear,
-                    1
+                    false
                 ),
                 100,
                 1
@@ -201,7 +201,6 @@ impl Serializable for Proof {
         self.ood_frame.write_into(target);
         self.fri_proof.write_into(target);
         self.pow_nonce.write_into(target);
-        self.gkr_proof.write_into(target);
         self.salts.write_into(target);
     }
 }

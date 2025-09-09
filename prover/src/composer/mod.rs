@@ -5,7 +5,8 @@
 use alloc::vec::Vec;
 
 use air::{
-    proof::{QuotientOodFrame, Air, TraceOodFrame},
+    proof::{QuotientOodFrame, TraceOodFrame},
+    Air,
     DeepCompositionCoefficients,
 };
 use math::{

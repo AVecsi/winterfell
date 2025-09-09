@@ -45,10 +45,5 @@ pub use air::{
     Air, AirContext, Assertion, AuxRandElements, BoundaryConstraint, BoundaryConstraintGroup,
     BoundaryConstraints, ConstraintCompositionCoefficients, ConstraintDivisor,
     DeepCompositionCoefficients, EvaluationFrame, TraceInfo, TransitionConstraintDegree,
-    TransitionConstraints,
-    DeepCompositionCoefficients, EvaluationFrame, GkrRandElements, GkrVerifier,
-    LagrangeConstraintsCompositionCoefficients, LagrangeKernelBoundaryConstraint,
-    LagrangeKernelConstraints, LagrangeKernelEvaluationFrame, LagrangeKernelRandElements,
-    LagrangeKernelTransitionConstraints, TraceInfo, TransitionConstraintDegree,
-    TransitionConstraints, ZkParameters,
+    TransitionConstraints, ZkParameters
 };

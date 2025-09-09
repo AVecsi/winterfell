@@ -123,17 +123,6 @@ impl<B: StarkField> AirContext<B> {
             );
         }
 
-<<<<<<< HEAD
-=======
-        // validate Lagrange kernel aux column, if any
-        if let Some(lagrange_kernel_aux_column_idx) = lagrange_kernel_aux_column_idx {
-            assert!(
-            lagrange_kernel_aux_column_idx == trace_info.get_aux_segment_width() - 1,
-            "Lagrange kernel column should be the last column of the auxiliary trace: index={}, but aux trace width is {}",
-            lagrange_kernel_aux_column_idx, trace_info.get_aux_segment_width()
-            );
-        }
-
         let h = options.zk_witness_randomizer_degree().unwrap_or(0);
         let trace_length = trace_info.length();
         let trace_length_ext = (trace_length + h as usize).next_power_of_two();
@@ -151,7 +140,6 @@ impl<B: StarkField> AirContext<B> {
             None
         };
 
->>>>>>> pr-293
         // determine minimum blowup factor needed to evaluate transition constraints by taking
         // the blowup factor of the highest degree constraint
         let mut ce_blowup_factor = 0;
@@ -298,16 +286,8 @@ impl<B: StarkField> AirContext<B> {
     /// if the highest constraint degree is equal to `5`, the constraint composition polynomial will
     /// require four columns and if the highest constraint degree is equal to `7`, it will require
     /// six columns to store.
-<<<<<<< HEAD
-=======
-    ///
-    /// Note that the Lagrange kernel constraints require only 1 column, since the degree of the
-    /// numerator is `trace_len - 1` for all transition constraints (i.e. the base degree is 1).
-    /// Hence, no matter what the degree of the divisor is for each, the degree of the fraction will
-    /// be at most `trace_len - 1`.
     ///
     /// TODO: update documentation
->>>>>>> pr-293
     pub fn num_constraint_composition_columns(&self) -> usize {
         let mut highest_constraint_degree = 0_usize;
         for degree in self

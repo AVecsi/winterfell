@@ -650,7 +650,7 @@ pub use prover::{
     ConstraintCompositionCoefficients, ConstraintDivisor, ConstraintEvaluator,
     DeepCompositionCoefficients, DefaultConstraintCommitment, DefaultConstraintEvaluator,
     DefaultTraceLde, EvaluationFrame, FieldExtension, MockPrng, Proof, ProofOptions, Prover,
-    ProverError, ProverGkrProof, StarkDomain, Trace, TraceInfo, TraceLde, TracePolyTable,
+    ProverError, StarkDomain, Trace, TraceInfo, TraceLde, TracePolyTable,
     TraceTable, TraceTableFragment, TransitionConstraintDegree,
 };
 pub use verifier::{verify, AcceptableOptions, ByteWriter, VerifierError};

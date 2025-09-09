@@ -378,6 +378,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -403,6 +404,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -429,6 +431,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -465,6 +468,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding, list_decoding: _ } = ProvenSecurity::compute(
             &options,
@@ -487,6 +491,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding, list_decoding: _ } = ProvenSecurity::compute(
             &options,
@@ -523,6 +528,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding, list_decoding: _ } = ProvenSecurity::compute(
             &options,
@@ -552,6 +558,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -578,6 +585,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding, list_decoding: _ } = ProvenSecurity::compute(
             &options,
@@ -603,6 +611,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -639,6 +648,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -664,6 +674,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -700,6 +711,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -725,6 +737,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -761,6 +774,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -786,6 +800,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity { unique_decoding: _, list_decoding } = ProvenSecurity::compute(
             &options,
@@ -822,6 +837,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -846,6 +862,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -885,6 +902,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -909,6 +927,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -948,6 +967,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -972,6 +992,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -1011,6 +1032,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Algebraic,
+            false
         );
         let ProvenSecurity {
             unique_decoding: security_1,
@@ -1039,6 +1061,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Algebraic,
+            false
         );
         let ProvenSecurity {
             unique_decoding: security_2,
@@ -1065,6 +1088,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Algebraic,
+            false
         );
         let ProvenSecurity {
             unique_decoding: security_2,
@@ -1092,6 +1116,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Algebraic,
+            false
         );
         let ProvenSecurity {
             unique_decoding: security_2,
@@ -1131,6 +1156,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Algebraic,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -1160,6 +1186,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Algebraic,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -1199,6 +1226,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: security_1,
@@ -1227,6 +1255,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Algebraic,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: security_2,
@@ -1253,6 +1282,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Algebraic,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: security_2,
@@ -1280,6 +1310,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Algebraic,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: security_2,
@@ -1319,6 +1350,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -1347,6 +1379,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Algebraic,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,
@@ -1373,6 +1406,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Algebraic,
             BatchingMethod::Linear,
+            false
         );
         let ProvenSecurity {
             unique_decoding: _,

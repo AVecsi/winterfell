@@ -448,7 +448,7 @@ pub trait Prover {
             // the generator of the trace domain. and send the results to the verifier
             let ood_trace_states =
                 trace_polys.get_ood_frame(z, air.context().trace_info().length());
-            let ood_evaluations = composition_poly.evaluate_at(z, air.is_zk());
+            let ood_evaluations = composition_poly.get_ood_frame(z, air.is_zk());
             channel.send_ood_evaluations(&ood_trace_states, &ood_evaluations);
 
             // draw random coefficients to use during DEEP polynomial composition, and use them to
