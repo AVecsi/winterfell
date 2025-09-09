@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 
 use air::{
-    proof::{QuotientOodFrame, TraceOodFrame},
+    proof::{QuotientOodFrame, Air, TraceOodFrame},
     DeepCompositionCoefficients,
 };
 use math::{
@@ -25,6 +25,8 @@ pub struct DeepCompositionPoly<E: FieldElement> {
     coefficients: Vec<E>,
     cc: DeepCompositionCoefficients<E>,
     z: E,
+    g: E,
+    is_zk: bool,
 }
 
 impl<E: FieldElement> DeepCompositionPoly<E> {
@@ -33,17 +35,27 @@ impl<E: FieldElement> DeepCompositionPoly<E> {
     /// Returns a new DEEP composition polynomial. Initially, this polynomial will be empty, and
     /// the intent is to populate the coefficients via add_trace_polys() and add_constraint_polys()
     /// methods.
-    pub fn new(z: E, cc: DeepCompositionCoefficients<E>) -> Self {
-        DeepCompositionPoly { coefficients: vec![], cc, z }
+    pub fn new<A: Air<BaseField = E::BaseField>>(
+        air: &A,
+        z: E,
+        cc: DeepCompositionCoefficients<E>,
+    ) -> Self {
+        DeepCompositionPoly {
+            coefficients: vec![],
+            cc,
+            z,
+            g: E::from(air.trace_domain_generator()),
+            is_zk: air.is_zk(),
+        }
     }
 
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the size of the DEEP composition polynomial.
-    pub fn poly_size(&self) -> usize {
-        self.coefficients.len()
-    }
+    ///// Returns the size of the DEEP composition polynomial.
+    //pub fn poly_size(&self) -> usize {
+    //self.coefficients.len()
+    //}
 
     /// Returns the degree of the composition polynomial.
     pub fn degree(&self) -> usize {
@@ -76,8 +88,7 @@ impl<E: FieldElement> DeepCompositionPoly<E> {
         // compute a second out-of-domain point offset from z by exactly trace generator; this
         // point defines the "next" computation state in relation to point z
         let trace_length = trace_polys.poly_size();
-        let g = E::from(E::BaseField::get_root_of_unity(trace_length.ilog2()));
-        let next_z = self.z * g;
+        let next_z = self.z * self.g;
 
         // combine trace polynomials into 2 composition polynomials T'(x) and T''(x)
         let mut composition_z = vec![E::ZERO; trace_length];
@@ -162,7 +173,6 @@ impl<E: FieldElement> DeepCompositionPoly<E> {
 
         // set the coefficients of the DEEP composition polynomial
         self.coefficients = trace_poly;
-        assert_eq!(self.poly_size() - 2, self.degree());
     }
 
     // LOW-DEGREE EXTENSION

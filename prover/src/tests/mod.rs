@@ -53,6 +53,7 @@ impl MockAir {
                 31,
                 BatchingMethod::Linear,
                 BatchingMethod::Linear,
+                false
             ),
         )
     }
@@ -73,6 +74,7 @@ impl MockAir {
                 31,
                 BatchingMethod::Linear,
                 BatchingMethod::Linear,
+                false
             ),
         );
         result.periodic_columns = column_values;
@@ -92,6 +94,7 @@ impl MockAir {
                 31,
                 BatchingMethod::Linear,
                 BatchingMethod::Linear,
+                false
             ),
         );
         result.assertions = assertions;
@@ -150,6 +153,7 @@ fn build_context<B: StarkField>(
         31,
         BatchingMethod::Linear,
         BatchingMethod::Linear,
+        false
     );
     let t_degrees = vec![TransitionConstraintDegree::new(2)];
     AirContext::new(trace_info, t_degrees, num_assertions, options)

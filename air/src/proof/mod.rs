@@ -69,6 +69,8 @@ pub struct Proof {
     pub fri_proof: FriProof,
     /// Proof-of-work nonce for query seed grinding.
     pub pow_nonce: u64,
+    /// Random values needed for Fiat-Shamir.
+    pub salts: Vec<u8>,
 }
 
 impl Proof {
@@ -83,8 +85,8 @@ impl Proof {
     }
 
     /// Returns the size of the LDE domain for the computation described by this proof.
-    pub fn lde_domain_size(&self) -> usize {
-        self.context.lde_domain_size()
+    pub fn lde_domain_size<E: FieldElement>(&self) -> usize {
+        self.context.lde_domain_size::<E>()
     }
 
     // SECURITY LEVEL
@@ -161,8 +163,10 @@ impl Proof {
                     1,
                     BatchingMethod::Linear,
                     BatchingMethod::Linear,
+                    1
                 ),
                 100,
+                1
             ),
             num_unique_queries: 1,
             commitments: Commitments::default(),
@@ -179,6 +183,7 @@ impl Proof {
             ood_frame: OodFrame::default(),
             fri_proof: FriProof::new_dummy(),
             pow_nonce: 0,
+            salts: vec![],
         }
     }
 }
@@ -196,6 +201,8 @@ impl Serializable for Proof {
         self.ood_frame.write_into(target);
         self.fri_proof.write_into(target);
         self.pow_nonce.write_into(target);
+        self.gkr_proof.write_into(target);
+        self.salts.write_into(target);
     }
 }
 
@@ -219,6 +226,7 @@ impl Deserializable for Proof {
             ood_frame: OodFrame::read_from(source)?,
             fri_proof: FriProof::read_from(source)?,
             pow_nonce: source.read_u64()?,
+            salts: Vec::read_from(source)?,
         };
         Ok(proof)
     }

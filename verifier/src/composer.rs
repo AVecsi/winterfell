@@ -65,6 +65,7 @@ impl<E: FieldElement> DeepComposer<E> {
         ood_main_frame: EvaluationFrame<E>,
         ood_aux_frame: Option<EvaluationFrame<E>>,
         ood_quotient_frame: QuotientOodFrame<E>,
+        is_zk: bool,
     ) -> Vec<E> {
         let ood_main_trace_states = [ood_main_frame.current(), ood_main_frame.next()];
 
@@ -74,12 +75,13 @@ impl<E: FieldElement> DeepComposer<E> {
         let n = queried_main_trace_states.num_rows();
         let mut result_num = Vec::<E>::with_capacity(n);
         let mut result_den = Vec::<E>::with_capacity(n);
-
         for ((_, row), &x) in (0..n).zip(queried_main_trace_states.rows()).zip(&self.x_coordinates)
         {
             let mut t1_num = E::ZERO;
             let mut t2_num = E::ZERO;
 
+            // we iterate over all polynomials except for the randomizer when zero-knowledge
+            // is enabled
             for (i, &value) in row.iter().enumerate() {
                 let value = E::from(value);
                 // compute the numerator of T'_i(x) as (T_i(x) - T_i(z)), multiply it by a
@@ -108,6 +110,8 @@ impl<E: FieldElement> DeepComposer<E> {
 
             // we define this offset here because composition of the main trace columns has
             // consumed some number of composition coefficients already.
+            // In the case zero-knowledge is enabled, the offset is adjusted so as to account for
+            // the randomizer polynomial.
             let cc_offset = queried_main_trace_states.num_columns();
 
             for ((j, row), &x) in
@@ -134,11 +138,20 @@ impl<E: FieldElement> DeepComposer<E> {
             }
         }
 
+    //     trace_ood_frame: &TraceOodFrame<E>,
+    //     constraints_ood_frame: &QuotientOodFrame<E>,
+    // ) {
+    //     self.ood_frame.set_trace_states::<E>(trace_ood_frame);
+    //     self.ood_frame.set_quotient_states::<E>(constraints_ood_frame);
+    //     let ood_evals = merge_ood_evaluations(trace_ood_frame, constraints_ood_frame);
+
+        let num_cols = ood_quotient_frame.current_row().len();
+
         for ((j, row), &x) in (0..n).zip(queried_evaluations.rows()).zip(&self.x_coordinates) {
             let mut t1_num = E::ZERO;
             let mut t2_num = E::ZERO;
 
-            for (i, &value) in row.iter().enumerate() {
+            for (i, &value) in row.iter().enumerate().take(num_cols) {
                 // compute the numerator of T'_i(x) as (T_i(x) - T_i(z)), multiply it by a
                 // composition coefficient, and add the result to the numerator aggregator
                 t1_num += (value - ood_quotient_frame.current_row()[i]) * self.cc.constraints[i];
@@ -146,6 +159,17 @@ impl<E: FieldElement> DeepComposer<E> {
                 // compute the numerator of T''_i(x) as (T_i(x) - T_i(z * g)), multiply it by a
                 // composition coefficient, and add the result to the numerator aggregator
                 t2_num += (value - ood_quotient_frame.next_row()[i]) * self.cc.constraints[i];
+            }
+
+            // In the case zero-knowledge is enabled, the randomizer is added to DEEP composition
+            // polynomial.
+            //TODO?
+            if is_zk {
+                let randmizer_at_x = row[num_cols];
+
+                t1_num += randmizer_at_x * (x - self.z[1]);
+
+                t2_num += randmizer_at_x * (x - self.z[0]);
             }
 
             // compute the common denominators (x - z) and (x - z * g), and use the to aggregate

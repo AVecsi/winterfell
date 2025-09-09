@@ -5,7 +5,11 @@
 
 use core::slice;
 
-use math::fields::f64::BaseElement;
+use math::{fields::f64::BaseElement, FieldElement, StarkField};
+use rand::{
+    distributions::{Standard, Uniform},
+    prelude::Distribution,
+};
 use utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 
 use super::{Digest, DIGEST_SIZE};
@@ -84,6 +88,18 @@ impl From<ElementDigest> for [BaseElement; DIGEST_SIZE] {
 impl From<ElementDigest> for [u8; 32] {
     fn from(value: ElementDigest) -> Self {
         value.as_bytes()
+    }
+}
+
+impl Distribution<ElementDigest> for Standard {
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> ElementDigest {
+        let mut res = [BaseElement::ZERO; DIGEST_SIZE];
+        let uni_dist = Uniform::from(0..BaseElement::MODULUS);
+        for r in res.iter_mut() {
+            let sampled_integer = uni_dist.sample(rng);
+            *r = BaseElement::new(sampled_integer);
+        }
+        ElementDigest::new(res)
     }
 }
 

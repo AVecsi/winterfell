@@ -26,6 +26,7 @@ default = ["std"]
 std = ["air/std", "crypto/std", "fri/std", "math/std", "utils/std"]
 
 [dependencies]
+<<<<<<< HEAD
 air = { version = "0.13", path = "../air", package = "winter-air", default-features = false }
 crypto = { version = "0.13", path = "../crypto", package = "winter-crypto", default-features = false }
 fri = { version = "0.13", path = '../fri', package = "winter-fri", default-features = false }
@@ -33,6 +34,18 @@ math = { version = "0.13", path = "../math", package = "winter-math", default-fe
 maybe_async = { version = "0.13", path = "../utils/maybe_async" , package = "winter-maybe-async" }
 tracing = { version = "0.1", default-features = false, features = ["attributes"] }
 utils = { version = "0.13", path = "../utils/core", package = "winter-utils", default-features = false }
+=======
+air = { version = "0.11", path = "../air", package = "winter-air", default-features = false }
+crypto = { version = "0.11", path = "../crypto", package = "winter-crypto", default-features = false }
+fri = { version = "0.11", path = '../fri', package = "winter-fri", default-features = false }
+math = { version = "0.11", path = "../math", package = "winter-math", default-features = false }
+maybe_async = { version = "0.11", path = "../utils/maybe_async" , package = "winter-maybe-async" }
+rand_chacha = { version = "0.3", default-features = false }
+rand-utils = { version = "0.11", path = "../utils/rand", package = "winter-rand-utils" }
+rand =  { version = "0.8" }
+tracing = { version = "0.1", default-features = false, features = ["attributes"]}
+utils = { version = "0.11", path = "../utils/core", package = "winter-utils", default-features = false }
+>>>>>>> pr-293
 
 [dev-dependencies]
 criterion = "0.6"

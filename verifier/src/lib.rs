@@ -186,8 +186,12 @@ where
     const AUX_TRACE_IDX: usize = 1;
     let trace_commitments = channel.read_trace_commitments();
 
+    // read all the salts needed for Fiat-Shamir. These are random values sampled by the Prover
+    // and required for zero-knowledge i.e., if zero-knowledge is not enabled then they are `None`.
+    let mut salts = channel.read_salts();
+
     // reseed the coin with the commitment to the main trace segment
-    public_coin.reseed(trace_commitments[MAIN_TRACE_IDX]);
+    public_coin.reseed_with_salt(trace_commitments[MAIN_TRACE_IDX], salts.remove(0));
 
     // process auxiliary trace segments (if any), to build a set of random elements for each segment
     let aux_trace_rand_elements = if air.trace_info().is_multi_segment() {
@@ -195,7 +199,7 @@ where
             .get_aux_rand_elements(&mut public_coin)
             .expect("failed to generate the random elements needed to build the auxiliary trace");
 
-        public_coin.reseed(trace_commitments[AUX_TRACE_IDX]);
+        public_coin.reseed_with_salt(trace_commitments[AUX_TRACE_IDX], salts.remove(0));
 
         Some(aux_rand_elements)
     } else {
@@ -214,7 +218,7 @@ where
     // to the prover, and the prover evaluates trace and constraint composition polynomials at z,
     // and sends the results back to the verifier.
     let constraint_commitment = channel.read_constraint_commitment();
-    public_coin.reseed(constraint_commitment);
+    public_coin.reseed_with_salt(constraint_commitment, salts.remove(0));
     let z = public_coin.draw::<E>().map_err(|_| VerifierError::RandomCoinError)?;
 
     // 3 ----- OOD consistency check --------------------------------------------------------------
@@ -248,10 +252,14 @@ where
         .iter()
         .enumerate()
         .fold(E::ZERO, |result, (i, &value)| {
-            result + z.exp_vartime(((i * (air.trace_length())) as u32).into()) * value
+            result
+                    + z.exp_vartime(
+                        ((i * air.context().num_coefficients_chunk_quotient()) as u32).into(),
+                    ) * value
         });
 
     // finally, make sure the values are the same
+    //TODO will they be the same?
     if ood_constraint_evaluation_1 != ood_constraint_evaluation_2 {
         return Err(VerifierError::InconsistentOodConstraintEvaluations);
     }
@@ -259,7 +267,7 @@ where
     // reseed the public coin with OOD evaluations
     let ood_evals = merge_ood_evaluations(&ood_trace_frame, &ood_constraint_evaluations);
     let digest = H::hash_elements(&ood_evals);
-    public_coin.reseed(digest);
+    public_coin.reseed_with_salt(digest, salts.remove(0));
 
     // 4 ----- FRI commitments --------------------------------------------------------------------
     // draw coefficients for computing DEEP composition polynomial from the public coin; in the
@@ -322,6 +330,7 @@ where
         ood_main_trace_frame,
         ood_aux_trace_frame,
         ood_constraint_evaluations,
+        air.is_zk(),
     );
 
     // 7 ----- Verify low-degree proof -------------------------------------------------------------

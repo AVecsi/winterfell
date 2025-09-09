@@ -6,6 +6,7 @@
 use core::{fmt::Debug, slice};
 
 use math::{FieldElement, StarkField};
+use rand::{distributions::Standard, prelude::Distribution};
 use utils::{ByteReader, Deserializable, DeserializationError, Serializable};
 
 mod blake;
@@ -17,7 +18,7 @@ pub use sha::Sha3_256;
 mod mds;
 
 mod rescue;
-pub use rescue::{Rp62_248, Rp64_256, RpJive64_256};
+pub use rescue::{Rp62_248, Rp64_256, RpJive64_256, ARK1, ARK2, MDS};
 
 // HASHER TRAITS
 // ================================================================================================
@@ -116,6 +117,14 @@ impl<const N: usize> Digest for ByteDigest<N> {
 impl<const N: usize> Default for ByteDigest<N> {
     fn default() -> Self {
         ByteDigest([0; N])
+    }
+}
+
+impl Distribution<ByteDigest<24>> for Standard {
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> ByteDigest<24> {
+        let mut res = [0_u8; 24];
+        rng.fill_bytes(&mut res);
+        ByteDigest(res)
     }
 }
 

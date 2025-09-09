@@ -17,7 +17,7 @@ mod trace_info;
 pub use trace_info::TraceInfo;
 
 mod context;
-pub use context::AirContext;
+pub use context::{AirContext, ZkParameters};
 
 mod assertions;
 pub use assertions::Assertion;
@@ -533,5 +533,10 @@ pub trait Air: Send + Sync {
                 self.context().num_constraint_composition_columns(),
             ),
         }
+    }
+
+    /// Returns whether zero-knowledge is enabled.
+    fn is_zk(&self) -> bool {
+        self.options().is_zk()
     }
 }

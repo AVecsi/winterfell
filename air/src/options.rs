@@ -103,6 +103,7 @@ pub struct ProofOptions {
     batching_constraints: BatchingMethod,
     batching_deep: BatchingMethod,
     partition_options: PartitionOptions,
+    is_zk: bool,
 }
 
 // PROOF OPTIONS IMPLEMENTATION
@@ -139,6 +140,7 @@ impl ProofOptions {
         fri_remainder_max_degree: usize,
         batching_constraints: BatchingMethod,
         batching_deep: BatchingMethod,
+        is_zk: bool,
     ) -> ProofOptions {
         // TODO: return errors instead of panicking
         assert!(num_queries > 0, "number of queries must be greater than 0");
@@ -182,6 +184,7 @@ impl ProofOptions {
             partition_options: PartitionOptions::new(1, 1),
             batching_constraints,
             batching_deep,
+            is_zk,
         }
     }
 
@@ -290,6 +293,32 @@ impl ProofOptions {
     pub fn deep_poly_batching_method(&self) -> BatchingMethod {
         self.batching_deep
     }
+    /// Returns whether zero-knowledge is enabled.
+    pub fn is_zk(&self) -> bool {
+        self.is_zk
+    }
+
+    /// Computes a lower bound on the degree of the polynomial used for randomizing the witness
+    /// polynomials.
+    pub(crate) fn zk_witness_randomizer_degree(&self) -> Option<u32> {
+        if self.is_zk {
+            let h = compute_degree_randomizing_poly(
+                self.field_extension().degree() as usize,
+                self.num_queries(),
+            );
+
+            Some(h as u32)
+        } else {
+            None
+        }
+    }
+}
+
+/// Computes the number of coefficients of the polynomials used to randomize the witness polynomials.
+///
+/// This is based on equation (13) in https://eprint.iacr.org/2024/1037
+pub fn compute_degree_randomizing_poly(extension_degree: usize, num_fri_queries: usize) -> usize {
+    2 * (extension_degree + num_fri_queries)
 }
 
 impl<E: StarkField> ToElements<E> for ProofOptions {
@@ -318,6 +347,7 @@ impl Serializable for ProofOptions {
         target.write(self.batching_deep);
         target.write_u8(self.partition_options.num_partitions);
         target.write_u8(self.partition_options.hash_rate);
+        target.write_bool(self.is_zk)
     }
 }
 
@@ -336,6 +366,7 @@ impl Deserializable for ProofOptions {
             source.read_u8()? as usize,
             BatchingMethod::read_from(source)?,
             BatchingMethod::read_from(source)?,
+            source.read_bool()?,
         );
         Ok(result.with_partitions(source.read_u8()? as usize, source.read_u8()? as usize))
     }
@@ -550,6 +581,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Linear,
+            false,
         );
         assert_eq!(expected, options.to_elements());
     }
@@ -605,6 +637,7 @@ mod tests {
             fri_remainder_max_degree as usize,
             BatchingMethod::Linear,
             BatchingMethod::Horner,
+            false
         );
 
         let options_serialized = options.to_bytes();

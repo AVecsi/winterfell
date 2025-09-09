@@ -55,21 +55,21 @@ impl<E: FieldElement> TracePolyTable<E> {
     }
 
     /// Evaluates all trace polynomials (across all trace segments) at the specified point `x`.
-    pub fn evaluate_at(&self, x: E) -> Vec<E> {
-        let mut result = self.main_trace_polys.evaluate_columns_at(x);
+    pub fn evaluate_at(&self, x: E, skip_last: bool) -> Vec<E> {
+        let mut result = self.main_trace_polys.evaluate_columns_at(x, skip_last);
         for aux_polys in self.aux_trace_polys.iter() {
-            result.append(&mut aux_polys.evaluate_columns_at(x));
+            result.append(&mut aux_polys.evaluate_columns_at(x, false));
         }
         result
     }
 
     /// Returns an out-of-domain evaluation frame constructed by evaluating trace polynomials for
     /// all columns at points z and z * g, where g is the generator of the trace domain.
-    pub fn get_ood_frame(&self, z: E) -> TraceOodFrame<E> {
-        let log_trace_len = self.poly_size().ilog2();
+    pub fn get_ood_frame(&self, z: E, trace_len: usize) -> TraceOodFrame<E> {
+        let log_trace_len = trace_len.ilog2();
         let g = E::from(E::BaseField::get_root_of_unity(log_trace_len));
-        let current_row = self.evaluate_at(z);
-        let next_row = self.evaluate_at(z * g);
+        let current_row = self.evaluate_at(z, false);
+        let next_row = self.evaluate_at(z * g, false);
         let main_trace_width = self.main_trace_polys.num_cols();
 
         TraceOodFrame::new(current_row, next_row, main_trace_width)

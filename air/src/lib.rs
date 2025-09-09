@@ -46,4 +46,9 @@ pub use air::{
     BoundaryConstraints, ConstraintCompositionCoefficients, ConstraintDivisor,
     DeepCompositionCoefficients, EvaluationFrame, TraceInfo, TransitionConstraintDegree,
     TransitionConstraints,
+    DeepCompositionCoefficients, EvaluationFrame, GkrRandElements, GkrVerifier,
+    LagrangeConstraintsCompositionCoefficients, LagrangeKernelBoundaryConstraint,
+    LagrangeKernelConstraints, LagrangeKernelEvaluationFrame, LagrangeKernelRandElements,
+    LagrangeKernelTransitionConstraints, TraceInfo, TransitionConstraintDegree,
+    TransitionConstraints, ZkParameters,
 };

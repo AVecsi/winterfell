@@ -47,9 +47,9 @@ pub use air::{
     ConstraintCompositionCoefficients, ConstraintDivisor, DeepCompositionCoefficients,
     EvaluationFrame, FieldExtension, ProofOptions, TraceInfo, TransitionConstraintDegree,
 };
-use air::{AuxRandElements, PartitionOptions};
+use air::{AuxRandElements, PartitionOptions, ZkParameters};
 pub use crypto;
-use crypto::{ElementHasher, RandomCoin, VectorCommitment};
+use crypto::{ElementHasher, Hasher, RandomCoin, VectorCommitment};
 use fri::FriProver;
 pub use math;
 use math::{
@@ -57,6 +57,7 @@ use math::{
     fields::{CubeExtension, QuadExtension, SexticExtension},
     ExtensibleField, FieldElement, StarkField, ToElements,
 };
+use rand::{distributions::Standard, prelude::Distribution, Error, RngCore, SeedableRng};
 use tracing::{event, info_span, instrument, Level};
 pub use utils::{
     iterators, ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
@@ -157,6 +158,9 @@ pub trait Prover {
     where
         E: FieldElement<BaseField = Self::BaseField>;
 
+    /// PRNG used when zero-knowledge (zk) is enabled.
+    type ZkPrng: RngCore + SeedableRng;
+
     // REQUIRED METHODS
     // --------------------------------------------------------------------------------------------
 
@@ -185,6 +189,8 @@ pub trait Prover {
         main_trace: &ColMatrix<Self::BaseField>,
         domain: &StarkDomain<Self::BaseField>,
         partition_option: PartitionOptions,
+        zk_parameters: Option<ZkParameters>,
+        prng: &mut Option<Self::ZkPrng>,
     ) -> (Self::TraceLde<E>, TracePolyTable<E>)
     where
         E: FieldElement<BaseField = Self::BaseField>;
@@ -218,6 +224,8 @@ pub trait Prover {
         num_constraint_composition_columns: usize,
         domain: &StarkDomain<Self::BaseField>,
         partition_options: PartitionOptions,
+        zk_parameters: Option<ZkParameters>,
+        prng: &mut Option<Self::ZkPrng>,
     ) -> (Self::ConstraintCommitment<E>, CompositionPoly<E>)
     where
         E: FieldElement<BaseField = Self::BaseField>;
@@ -247,32 +255,39 @@ pub trait Prover {
     /// computation described by [Self::Air](Prover::Air) and generated using some set of secret and
     /// public inputs.
     #[maybe_async]
-    fn prove(&self, trace: Self::Trace) -> Result<Proof, ProverError>
+    fn prove(
+        &self,
+        trace: Self::Trace,
+        seed: Option<<Self::ZkPrng as SeedableRng>::Seed>,
+    ) -> Result<Proof, ProverError>
     where
+        Standard: Distribution<<<Self as Prover>::HashFn as crypto::Hasher>::Digest>,
         <Self::Air as Air>::PublicInputs: Send,
     {
         // figure out which version of the generic proof generation procedure to run. this is a sort
         // of static dispatch for selecting two generic parameter: extension field and hash
         // function.
         match self.options().field_extension() {
-            FieldExtension::None => maybe_await!(self.generate_proof::<Self::BaseField>(trace)),
+            FieldExtension::None => {
+                maybe_await!(self.generate_proof::<Self::BaseField>(trace, seed))
+            },
             FieldExtension::Quadratic => {
                 if !<QuadExtension<Self::BaseField>>::is_supported() {
                     return Err(ProverError::UnsupportedFieldExtension(2));
                 }
-                maybe_await!(self.generate_proof::<QuadExtension<Self::BaseField>>(trace))
+                maybe_await!(self.generate_proof::<QuadExtension<Self::BaseField>>(trace, seed))
             },
             FieldExtension::Cubic => {
                 if !<CubeExtension<Self::BaseField>>::is_supported() {
                     return Err(ProverError::UnsupportedFieldExtension(3));
                 }
-                maybe_await!(self.generate_proof::<CubeExtension<Self::BaseField>>(trace))
+                maybe_await!(self.generate_proof::<CubeExtension<Self::BaseField>>(trace, seed))
             },
             FieldExtension::Sextic => {
                 if !<SexticExtension<Self::BaseField>>::is_supported() {
                     return Err(ProverError::UnsupportedFieldExtension(6));
                 }
-                maybe_await!(self.generate_proof::<SexticExtension<Self::BaseField>>(trace))
+                maybe_await!(self.generate_proof::<SexticExtension<Self::BaseField>>(trace, seed))
             },
         }
     }
@@ -285,8 +300,13 @@ pub trait Prover {
     /// TODO: make this function un-callable externally?
     #[doc(hidden)]
     #[maybe_async]
-    fn generate_proof<E>(&self, trace: Self::Trace) -> Result<Proof, ProverError>
+    fn generate_proof<E>(
+        &self,
+        trace: Self::Trace,
+        seed: Option<<Self::ZkPrng as SeedableRng>::Seed>,
+    ) -> Result<Proof, ProverError>
     where
+        Standard: Distribution<<<Self as Prover>::HashFn as Hasher>::Digest>,
         E: FieldElement<BaseField = Self::BaseField>,
         <Self::Air as Air>::PublicInputs: Send,
     {
@@ -301,28 +321,45 @@ pub trait Prover {
         // execution of the computation for the provided public inputs.
         let air = Self::Air::new(trace.info().clone(), pub_inputs, self.options().clone());
 
+        // get the zk parameter, which are None unless zk is enabled
+        let zk_parameters = air.context().zk_parameters();
+
+        // create a PRNG to be used when zk is enabled, and also generates a seed to be used in
+        // generating salting values for Fiat-Shamir by `ProverChannel`
+        let (mut prng, seed) = generate_prng_and_new_seed(seed);
+
         // create a channel which is used to simulate interaction between the prover and the
         // verifier; the channel will be used to commit to values and to draw randomness that
         // should come from the verifier.
-        let mut channel =
-            ProverChannel::<Self::Air, E, Self::HashFn, Self::RandomCoin, Self::VC>::new(
-                &air,
-                pub_inputs_elements,
-            );
+        let mut channel = ProverChannel::<
+            Self::Air,
+            E,
+            Self::HashFn,
+            Self::ZkPrng,
+            Self::RandomCoin,
+            Self::VC,
+        >::new(
+            &air, pub_inputs_elements, air.context().zk_blowup_factor(), seed
+        );
 
         // 1 ----- Commit to the execution trace --------------------------------------------------
 
         // build computation domain; this is used later for polynomial evaluations
         let lde_domain_size = air.lde_domain_size();
-        let trace_length = air.trace_length();
+        let trace_length = air.context().trace_length_ext();
         let domain = info_span!("build_domain", trace_length, lde_domain_size)
             .in_scope(|| StarkDomain::new(&air));
         assert_eq!(domain.lde_domain_size(), lde_domain_size);
         assert_eq!(domain.trace_length(), trace_length);
 
         // commit to the main trace segment
-        let (mut trace_lde, mut trace_polys) =
-            maybe_await!(self.commit_to_main_trace_segment(&trace, &domain, &mut channel));
+        let (mut trace_lde, mut trace_polys) = maybe_await!(self.commit_to_main_trace_segment(
+            &trace,
+            &domain,
+            zk_parameters,
+            &mut channel,
+            &mut prng,
+        ));
 
         // build the auxiliary trace segment, and append the resulting segments to trace commitment
         // and trace polynomial table structs
@@ -338,7 +375,7 @@ pub trait Prover {
                 // extend the auxiliary trace segment and commit to the extended trace
                 let span = info_span!("commit_to_aux_trace_segment").entered();
                 let (aux_segment_polys, aux_segment_commitment) =
-                    trace_lde.set_aux_trace(&aux_trace, &domain);
+                    trace_lde.set_aux_trace(&aux_trace, &domain, zk_parameters, &mut prng);
 
                 // commit to the LDE of the extended auxiliary trace segment by writing its
                 // commitment into the channel
@@ -386,7 +423,14 @@ pub trait Prover {
 
         // 3 ----- commit to constraint evaluations -----------------------------------------------
         let (constraint_commitment, composition_poly) = maybe_await!(self
-            .commit_to_constraint_evaluations(&air, composition_poly_trace, &domain, &mut channel));
+            .commit_to_constraint_evaluations(
+                &air,
+                composition_poly_trace,
+                &domain,
+                &mut channel,
+                zk_parameters,
+                &mut prng
+            ));
 
         // 4 ----- build DEEP composition polynomial ----------------------------------------------
         let deep_composition_poly = {
@@ -402,14 +446,15 @@ pub trait Prover {
 
             // evaluate trace and constraint polynomials at the OOD point z and gz, where g is
             // the generator of the trace domain. and send the results to the verifier
-            let ood_trace_states = trace_polys.get_ood_frame(z);
-            let ood_evaluations = composition_poly.get_ood_frame(z);
+            let ood_trace_states =
+                trace_polys.get_ood_frame(z, air.context().trace_info().length());
+            let ood_evaluations = composition_poly.evaluate_at(z, air.is_zk());
             channel.send_ood_evaluations(&ood_trace_states, &ood_evaluations);
 
             // draw random coefficients to use during DEEP polynomial composition, and use them to
             // initialize the DEEP composition polynomial
             let deep_coefficients = channel.get_deep_composition_coeffs();
-            let mut deep_composition_poly = DeepCompositionPoly::new(z, deep_coefficients);
+            let mut deep_composition_poly = DeepCompositionPoly::new(&air, z, deep_coefficients);
 
             // combine all polynomials together and merge them into the DEEP composition
             // polynomial
@@ -428,7 +473,7 @@ pub trait Prover {
 
         // make sure the degree of the DEEP composition polynomial is equal to trace polynomial
         // degree minus 1.
-        assert_eq!(trace_length - 2, deep_composition_poly.degree());
+        assert_eq!(air.context().trace_length_ext() - 2, deep_composition_poly.degree());
 
         // 5 ----- evaluate DEEP composition polynomial over LDE domain ---------------------------
         let deep_evaluations = {
@@ -436,7 +481,10 @@ pub trait Prover {
             let deep_evaluations = deep_composition_poly.evaluate(&domain);
             // we check the following condition in debug mode only because infer_degree is an
             // expensive operation
-            debug_assert_eq!(trace_length - 2, infer_degree(&deep_evaluations, domain.offset()));
+            debug_assert_eq!(
+                air.context().trace_length_ext() - 2,
+                infer_degree(&deep_evaluations, domain.offset())
+            );
 
             drop(span);
             deep_evaluations
@@ -499,15 +547,27 @@ pub trait Prover {
 
     #[doc(hidden)]
     #[instrument(skip_all)]
+    #[allow(clippy::type_complexity)]
     #[maybe_async]
     fn commit_to_main_trace_segment<E>(
         &self,
         trace: &Self::Trace,
         domain: &StarkDomain<Self::BaseField>,
-        channel: &mut ProverChannel<'_, Self::Air, E, Self::HashFn, Self::RandomCoin, Self::VC>,
+        zk_parameters: Option<ZkParameters>,
+        channel: &mut ProverChannel<
+            '_,
+            Self::Air,
+            E,
+            Self::HashFn,
+            Self::ZkPrng,
+            Self::RandomCoin,
+            Self::VC,
+        >,
+        prng: &mut Option<Self::ZkPrng>,
     ) -> (Self::TraceLde<E>, TracePolyTable<E>)
     where
         E: FieldElement<BaseField = Self::BaseField>,
+        Standard: Distribution<<<Self as Prover>::HashFn as crypto::Hasher>::Digest>,
     {
         // extend the main execution trace and commit to the extended trace
         let (trace_lde, trace_polys) = maybe_await!(self.new_trace_lde(
@@ -515,6 +575,8 @@ pub trait Prover {
             trace.main_segment(),
             domain,
             self.options().partition_options(),
+            zk_parameters,
+            prng,
         ));
 
         // get the commitment to the main trace segment LDE
@@ -529,16 +591,28 @@ pub trait Prover {
 
     #[doc(hidden)]
     #[instrument(skip_all)]
+    #[allow(clippy::type_complexity)]
     #[maybe_async]
     fn commit_to_constraint_evaluations<E>(
         &self,
         air: &Self::Air,
         composition_poly_trace: CompositionPolyTrace<E>,
         domain: &StarkDomain<Self::BaseField>,
-        channel: &mut ProverChannel<'_, Self::Air, E, Self::HashFn, Self::RandomCoin, Self::VC>,
+        channel: &mut ProverChannel<
+            '_,
+            Self::Air,
+            E,
+            Self::HashFn,
+            Self::ZkPrng,
+            Self::RandomCoin,
+            Self::VC,
+        >,
+        zk_parameters: Option<ZkParameters>,
+        prng: &mut Option<Self::ZkPrng>,
     ) -> (Self::ConstraintCommitment<E>, CompositionPoly<E>)
     where
         E: FieldElement<BaseField = Self::BaseField>,
+        Standard: Distribution<<<Self as Prover>::HashFn as crypto::Hasher>::Digest>,
     {
         // first, build a commitment to the evaluations of the constraint composition polynomial
         // columns
@@ -547,7 +621,9 @@ pub trait Prover {
                 composition_poly_trace,
                 air.context().num_constraint_composition_columns(),
                 domain,
-                self.options().partition_options()
+                self.options().partition_options(),
+                zk_parameters,
+                prng
             ));
 
         // then, commit to the evaluations of constraints by writing the commitment string of
@@ -555,5 +631,53 @@ pub trait Prover {
         channel.commit_constraints(constraint_commitment.commitment());
 
         (constraint_commitment, composition_poly)
+    }
+}
+
+// MOCK PRNG FOR ZERO-KNOWLEDGE
+// =================================================================================================
+
+/// A mock PRNG used when zero-knowledge is not enabled.
+pub struct MockPrng;
+impl SeedableRng for MockPrng {
+    type Seed = [u8; 8];
+
+    fn from_seed(_seed: Self::Seed) -> Self {
+        Self
+    }
+}
+
+impl RngCore for MockPrng {
+    fn next_u32(&mut self) -> u32 {
+        0
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        0
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        dest.iter_mut().for_each(|d| *d = 0);
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
+        dest.iter_mut().for_each(|d| *d = 0);
+        Ok(())
+    }
+}
+
+/// A helper funcation that generates a PRNG from a seed when zero-knowledge is enabled.
+fn generate_prng_and_new_seed<P: RngCore + SeedableRng>(
+    seed: Option<<P as SeedableRng>::Seed>,
+) -> (Option<P>, Option<<P as SeedableRng>::Seed>) {
+    match seed {
+        Some(seed) => {
+            let mut prng = P::from_seed(seed);
+            let mut seed = <P as SeedableRng>::Seed::default();
+            prng.fill_bytes(seed.as_mut());
+
+            (Some(prng), Some(seed))
+        },
+        None => (None, None),
     }
 }
