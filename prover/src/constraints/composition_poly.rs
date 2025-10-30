@@ -133,8 +133,8 @@ impl<E: FieldElement> CompositionPoly<E> {
     }
 
     /// Returns evaluations of all composition polynomial columns at points `z` and `g * z`.
-    pub fn get_ood_frame(&self, z: E , is_zk: bool) -> QuotientOodFrame<E> {
-        let log_trace_len = self.column_len().ilog2();
+    pub fn get_ood_frame(&self, z: E, trace_len: usize, is_zk: bool) -> QuotientOodFrame<E> {
+        let log_trace_len = trace_len.ilog2();
         let g = E::from(E::BaseField::get_root_of_unity(log_trace_len));
         let current_row = self.data.evaluate_columns_at(z, is_zk);
         let next_row = self.data.evaluate_columns_at(z * g, is_zk);

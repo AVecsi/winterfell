@@ -1,3 +1,5 @@
+use core::any;
+
 // Copyright (c) Facebook, Inc. and its affiliates.
 //
 // This source code is licensed under the MIT license found in the
@@ -100,7 +102,7 @@ impl<E: FieldElement> DeepCompositionPoly<E> {
         let mut i = 0;
 
         // --- merge polynomials of the main trace segment ----------------------------------------
-        for poly in trace_polys.main_trace_polys() {
+         for poly in trace_polys.main_trace_polys() {
             // compute T'(x) = T(x) - T(z), multiply it by a pseudo-random coefficient,
             // and add the result into composition polynomial
             acc_trace_poly::<E::BaseField, E>(
@@ -145,8 +147,13 @@ impl<E: FieldElement> DeepCompositionPoly<E> {
             i += 1;
         }
 
+        // collect quotient columns once so we can reuse them later for randomizer
+        let quotient_columns = quotient_polys.into_columns();
+
         // --- merge polynomials of the composition polynomial trace ------------------------------
-        for (i, poly) in quotient_polys.into_columns().iter().enumerate() {
+        let num_cols = ood_quotient_states.current_row().len();
+
+        for (i, poly) in quotient_columns.iter().enumerate().take(num_cols) {
             // compute T'(x) = T(x) - T(z), multiply it by a pseudo-random coefficient,
             // and add the result into composition polynomial
             acc_trace_poly::<E, E>(
@@ -174,6 +181,13 @@ impl<E: FieldElement> DeepCompositionPoly<E> {
 
         // set the coefficients of the DEEP composition polynomial
         self.coefficients = trace_poly;
+
+        //add the randomizer codeword for FRI
+        if self.is_zk {
+            iter_mut!(self.coefficients)
+                .zip(&quotient_columns[quotient_columns.len() - 1])
+                .for_each(|(a, b)| *a += *b);
+        }
     }
 
     // LOW-DEGREE EXTENSION

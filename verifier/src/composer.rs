@@ -138,13 +138,6 @@ impl<E: FieldElement> DeepComposer<E> {
             }
         }
 
-    //     trace_ood_frame: &TraceOodFrame<E>,
-    //     constraints_ood_frame: &QuotientOodFrame<E>,
-    // ) {
-    //     self.ood_frame.set_trace_states::<E>(trace_ood_frame);
-    //     self.ood_frame.set_quotient_states::<E>(constraints_ood_frame);
-    //     let ood_evals = merge_ood_evaluations(trace_ood_frame, constraints_ood_frame);
-
         let num_cols = ood_quotient_frame.current_row().len();
 
         for ((j, row), &x) in (0..n).zip(queried_evaluations.rows()).zip(&self.x_coordinates) {
@@ -161,22 +154,16 @@ impl<E: FieldElement> DeepComposer<E> {
                 t2_num += (value - ood_quotient_frame.next_row()[i]) * self.cc.constraints[i];
             }
 
-            // In the case zero-knowledge is enabled, the randomizer is added to DEEP composition
-            // polynomial.
-            //TODO?
-            if is_zk {
-                let randmizer_at_x = row[num_cols];
-
-                t1_num += randmizer_at_x * (x - self.z[1]);
-
-                t2_num += randmizer_at_x * (x - self.z[0]);
-            }
-
             // compute the common denominators (x - z) and (x - z * g), and use the to aggregate
             // numerators into the common numerator computed for the main trace of this query
             let t1_den = x - self.z[0];
             let t2_den = x - self.z[1];
             result_num[j] += t1_num * t2_den + t2_num * t1_den;
+
+            if is_zk {
+                let randmizer_at_x = row[num_cols];
+                result_num[j] += randmizer_at_x * result_den[j];
+            }
         }
 
         result_den = batch_inversion(&result_den);
