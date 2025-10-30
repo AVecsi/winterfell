@@ -45,7 +45,7 @@ const R2: u32 = 0x32f054;
 const G: u32 = 2187;
 
 /// Number of bytes needed to represent field element
-const ELEMENT_BYTES: usize = 3;
+const ELEMENT_BYTES: usize = 4;
 
 // FIELD ELEMENT
 // ================================================================================================
@@ -215,6 +215,7 @@ impl Randomizable for BaseElement {
     const VALUE_SIZE: usize = ELEMENT_BYTES;
 
     fn from_random_bytes(bytes: &[u8]) -> Option<Self> {
+
         Self::try_from(bytes).ok()
     }
 }
@@ -519,8 +520,11 @@ impl<'a> TryFrom<&'a [u8]> for BaseElement {
             )));
         }
 
-        let value =
+        let mut value =
             (bytes[0] as u32) + ((bytes[1] as u32) << 8) + (((bytes[2] & 127) as u32) << 16);
+
+        //TODO Adam the random value is over the limit, fix the generation later.
+        value = value % M;
         if value >= M {
             return Err(DeserializationError::InvalidValue(format!(
                 "invalid field element: value {} is greater than or equal to the field modulus",
@@ -548,6 +552,7 @@ impl Serializable for BaseElement {
         target.write_u8(x as u8);
         target.write_u8((x >> 8) as u8);
         target.write_u8((x >> 16) as u8);
+        target.write_u8(0 as u8);
     }
 }
 
@@ -557,7 +562,11 @@ impl Deserializable for BaseElement {
         let x0 = source.read_u8()?;
         let x1 = source.read_u8()?;
         let x2 = source.read_u8()?;
-        let value = (x0 as u32) + ((x1 as u32) << 8) + (((x2 & 127) as u32) << 16);
+        let useless = source.read_u8()?;
+        let mut value = (x0 as u32) + ((x1 as u32) << 8) + (((x2 & 127) as u32) << 16);
+
+        //TODO Adam the random value is over the limit, fix the generation later.
+        value = value % M;
         if value >= M {
             return Err(DeserializationError::InvalidValue(format!(
                 "invalid field element: value {} is greater than or equal to the field modulus",

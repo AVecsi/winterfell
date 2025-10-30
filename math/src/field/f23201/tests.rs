@@ -5,9 +5,11 @@
 use super::{BaseElement, ExtensibleField, FieldElement, Serializable, StarkField, M};
 use crate::field::{CubeExtension, ExtensionOf, QuadExtension, SexticExtension};
 use core::convert::TryFrom;
+use alloc::vec::Vec;
 use num_bigint::BigUint;
 use proptest::prelude::*;
 use rand_utils::rand_value;
+use utils::SliceReader;
 
 // MANUAL TESTS
 // ================================================================================================
@@ -155,8 +157,7 @@ fn from_u128() {
 fn try_from_slice() {
     let bytes = vec![1, 0, 0];
     let result = BaseElement::try_from(bytes.as_slice());
-    assert!(result.is_ok());
-    assert_eq!(1, result.unwrap().as_int());
+    assert!(result.is_err());
 
     let bytes = vec![1, 0];
     let result = BaseElement::try_from(bytes.as_slice());
@@ -164,11 +165,53 @@ fn try_from_slice() {
 
     let bytes = vec![1, 0, 0, 0];
     let result = BaseElement::try_from(bytes.as_slice());
-    assert!(result.is_err());
+    assert!(result.is_ok());
+    assert_eq!(1, result.unwrap().as_int());
 
     let bytes = vec![255, 255, 255];
     let result = BaseElement::try_from(bytes.as_slice());
     assert!(result.is_err());
+}
+
+#[test]
+fn serialize_deserialize() {
+    use utils::{Serializable, Deserializable};
+    // Create a sample BaseElement
+        let original = BaseElement::new(0x012345); // arbitrary value under M
+
+        // --- Serialize ---
+        let mut serialized_bytes = Vec::new();
+        original.write_into(&mut serialized_bytes);
+
+        // Ensure the serialized representation matches expectation
+        // (depending on your encoding logic)
+        // The first byte is 0, then little-endian order of 3 bytes
+        assert_eq!(
+            serialized_bytes.len(),
+            4,
+            "Serialized BaseElement must have 4 bytes"
+        );
+
+        let mut reader = SliceReader::new(&serialized_bytes);
+
+        // --- Deserialize ---
+        
+    let deserialized =
+        BaseElement::read_from(&mut reader).expect("Deserialization should succeed");
+
+        // --- Verify round-trip consistency ---
+        assert_eq!(
+            original, deserialized,
+            "Deserialized value should equal the original"
+        );
+
+        // --- Optionally, verify the bytes are consistent ---
+        let mut reserialized = Vec::new();
+        deserialized.write_into(&mut reserialized);
+        assert_eq!(
+            serialized_bytes, reserialized,
+            "Re-serialization should produce identical bytes"
+        );
 }
 
 // QUADRATIC EXTENSION
