@@ -114,10 +114,8 @@ impl TransitionConstraintDegree {
         // However, if the degree is 5, the blowup factor could be as small as 4.
         //
         // TODO: update documentation
-        let degree_bound = self.base + self.cycles.len();
-        let q_deg = degree_bound * (trace_length_ext - 1) - (trace_length - 1);
-        let blowup_factor = q_deg.div_ceil(trace_length_ext);
+        let degree_bound = self.base + self.cycles.len() - 1;
 
-        cmp::max(blowup_factor.next_power_of_two(), ProofOptions::MIN_BLOWUP_FACTOR)
+        cmp::max(degree_bound.next_power_of_two(), ProofOptions::MIN_BLOWUP_FACTOR)
     }
 }

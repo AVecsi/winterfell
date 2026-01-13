@@ -259,7 +259,6 @@ where
         });
 
     // finally, make sure the values are the same
-    //TODO will they be the same?
     if ood_constraint_evaluation_1 != ood_constraint_evaluation_2 {
         return Err(VerifierError::InconsistentOodConstraintEvaluations);
     }
