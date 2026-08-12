@@ -82,11 +82,9 @@ impl<E: FieldElement> CompositionPoly<E> {
         fft::interpolate_poly_with_offset(&mut trace, &inv_twiddles, domain.offset());
 
         // compute the segment quotient polynomials
-        let quotient_degree = polynom::degree_of(&trace);
-        let degree_chunked_quotient = if zk_parameters.is_some() {
-            (quotient_degree + 1).div_ceil(num_cols)
-        } else {
-            domain.trace_length()
+        let degree_chunked_quotient = match zk_parameters {
+            Some(zk) => domain.trace_length() - zk.degree_constraint_randomizer(),
+            None => domain.trace_length(),
         };
         let polys = segment(trace, degree_chunked_quotient, num_cols);
         let mut polys = complement_to(polys, domain.trace_length(), prng);
@@ -97,12 +95,13 @@ impl<E: FieldElement> CompositionPoly<E> {
             let mut zk_col = vec![E::ZERO; extended_len];
 
             for a in zk_col.iter_mut() {
-                let bytes = prng
-                    .as_mut()
-                    .expect("should contain a PRNG when zk is enabled")
-                    .gen::<[u8; 32]>();
-                *a = E::from_random_bytes(&bytes[..E::VALUE_SIZE])
-                    .expect("failed to generate randomness");
+                let prng = prng.as_mut().expect("should contain a PRNG when zk is enabled");
+                *a = loop {
+                    let bytes = prng.gen::<[u8; 32]>();
+                    if let Some(v) = E::from_random_bytes(&bytes[..E::VALUE_SIZE]) {
+                        break v;
+                    }
+                };
             }
             // reduce the degree to match that of the DEEP composition polynomial
             zk_col[extended_len - 1] = E::ZERO;
@@ -172,12 +171,13 @@ fn complement_to<R: RngCore, E: FieldElement>(
         let diff = l - poly.len();
 
         for eval in current_poly.iter_mut().take(diff) {
-            let bytes = prng
-                .as_mut()
-                .expect("should contain a PRNG when zk is enabled")
-                .gen::<[u8; 32]>();
-            *eval = E::from_random_bytes(&bytes[..E::VALUE_SIZE])
-                .expect("failed to generate randomness");
+            let prng = prng.as_mut().expect("should contain a PRNG when zk is enabled");
+            *eval = loop {
+                let bytes = prng.gen::<[u8; 32]>();
+                if let Some(v) = E::from_random_bytes(&bytes[..E::VALUE_SIZE]) {
+                    break v;
+                }
+            };
         }
 
         let mut res = vec![];

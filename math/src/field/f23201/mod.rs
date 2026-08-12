@@ -520,11 +520,9 @@ impl<'a> TryFrom<&'a [u8]> for BaseElement {
             )));
         }
 
-        let mut value =
+        let value =
             (bytes[0] as u32) + ((bytes[1] as u32) << 8) + (((bytes[2] & 127) as u32) << 16);
 
-        //TODO Adam the random value is over the limit, fix the generation later.
-        value = value % M;
         if value >= M {
             return Err(DeserializationError::InvalidValue(format!(
                 "invalid field element: value {} is greater than or equal to the field modulus",

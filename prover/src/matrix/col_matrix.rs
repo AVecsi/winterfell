@@ -324,12 +324,13 @@ impl<E: FieldElement> ColMatrix<E> {
             .map(|col| {
                 let mut added = vec![E::ZERO; pad_len];
                 for a in added.iter_mut() {
-                    let bytes = prng
-                        .as_mut()
-                        .expect("should have a PRNG when zk is enabled")
-                        .gen::<[u8; 32]>();
-                    *a = E::from_random_bytes(&bytes[..E::VALUE_SIZE])
-                        .expect("failed to generate randomness");
+                    let prng = prng.as_mut().expect("should have a PRNG when zk is enabled");
+                    *a = loop {
+                        let bytes = prng.gen::<[u8; 32]>();
+                        if let Some(v) = E::from_random_bytes(&bytes[..E::VALUE_SIZE]) {
+                            break v;
+                        }
+                    };
                 }
 
                 let mut res_col = col.to_vec();
