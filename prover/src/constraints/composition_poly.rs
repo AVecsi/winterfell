@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 
 use air::ZkParameters;
 use air::proof::QuotientOodFrame;
-use math::{fft, polynom, FieldElement, StarkField};
+use math::{fft, FieldElement, StarkField};
 use rand::{Rng, RngCore};
 
 use super::{ColMatrix, StarkDomain};
@@ -82,6 +82,13 @@ impl<E: FieldElement> CompositionPoly<E> {
         fft::interpolate_poly_with_offset(&mut trace, &inv_twiddles, domain.offset());
 
         // compute the segment quotient polynomials
+        //
+        // The stride must equal AirContext::num_coefficients_chunk_quotient, which the verifier
+        // uses to recombine the columns at z. It is deliberately NOT derived from the actual
+        // degree of `trace`: the verifier cannot measure that, only the declared upper bound, so
+        // any AIR whose declared degree exceeds its true degree would desynchronise the two and
+        // its honest proofs would fail with InconsistentOodConstraintEvaluations. `trace_length()`
+        // here is the *extended* length, so this is `trace_length_ext - (num_queries + 1)`.
         let degree_chunked_quotient = match zk_parameters {
             Some(zk) => domain.trace_length() - zk.degree_constraint_randomizer(),
             None => domain.trace_length(),
@@ -95,6 +102,8 @@ impl<E: FieldElement> CompositionPoly<E> {
             let mut zk_col = vec![E::ZERO; extended_len];
 
             for a in zk_col.iter_mut() {
+                // see the note in ColMatrix::randomize: a single draw is rejected roughly half
+                // the time over a 23-bit field, so resample rather than unwrap.
                 let prng = prng.as_mut().expect("should contain a PRNG when zk is enabled");
                 *a = loop {
                     let bytes = prng.gen::<[u8; 32]>();
@@ -171,6 +180,7 @@ fn complement_to<R: RngCore, E: FieldElement>(
         let diff = l - poly.len();
 
         for eval in current_poly.iter_mut().take(diff) {
+            // see the note in ColMatrix::randomize
             let prng = prng.as_mut().expect("should contain a PRNG when zk is enabled");
             *eval = loop {
                 let bytes = prng.gen::<[u8; 32]>();

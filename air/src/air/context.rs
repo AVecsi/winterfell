@@ -351,12 +351,27 @@ impl<B: StarkField> AirContext<B> {
         }
     }
 
+    /// Returns the number of coefficients per column of the split constraint composition
+    /// polynomial.
+    ///
+    /// The prover chunks the quotient polynomial by this stride and the verifier recombines the
+    /// columns with it, so the two **must** agree. It is therefore derived only from quantities
+    /// both sides can compute without knowing the quotient's actual degree: with zero-knowledge
+    /// on, `trace_length_ext - (num_queries + 1)`.
+    ///
+    /// That is consistent by construction, because [Self::num_constraint_composition_columns]
+    /// is already `ceil((quotient_degree + 1) / this)`, so `num_cols * this >= quotient_degree +
+    /// 1` and no coefficient is dropped. It also leaves `trace_length_ext - this = num_queries +
+    /// 1` coefficients per column free, which is exactly the room the constraint randomizer of
+    /// section 4.1 in https://eprint.iacr.org/2024/1037 needs.
+    ///
+    /// Deriving the stride from the *degree* instead — as both sides used to, the prover from the
+    /// measured degree and the verifier from the declared one — makes it depend on how tight an
+    /// AIR's degree declaration happens to be. Any over-declaration then desynchronises the two
+    /// and an honest proof fails with `InconsistentOodConstraintEvaluations`.
     pub fn num_coefficients_chunk_quotient(&self) -> usize {
         if self.zk_parameters().is_some() {
-            let num_constraint_composition_cols = self.num_constraint_composition_columns();
-            let quotient_degree = self.constraint_composition_degree();
-
-            (quotient_degree + 1).div_ceil(num_constraint_composition_cols)
+            self.trace_length_ext() - (self.options.num_queries() + 1)
         } else {
             self.trace_len()
         }
