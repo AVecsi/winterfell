@@ -14,8 +14,8 @@ use super::{DeserializationError, SliceReader};
 // CONSTANTS
 // ================================================================================================
 
-const MAX_ROWS: usize = 2047;
-const MAX_COLS: usize = 2047;
+const MAX_ROWS: usize = 8191;
+const MAX_COLS: usize = 8191;
 
 // TABLE
 // ================================================================================================
