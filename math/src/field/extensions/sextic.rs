@@ -86,9 +86,15 @@ impl<B: ExtensibleField<3> + ExtensibleField<6> + StarkField> FieldElement for S
         if self == Self::ZERO {
             return self;
         }
-        // inverse as in complex numbers, but norm is a^2 + 3b^2.
-        let three: CubeExtension<B> = 3u32.into();
-        let norm = (self.0 * self.0) + (three * self.1 * self.1);
+        // The sextic extension is Fp^3[y]/(y^2 - t); the norm over Fp^3 of a + b*y is
+        // a^2 - t*b^2. Which t applies is fixed by B's own ExtensibleField impl and differs
+        // per base field (f23201 uses y^2 = -3, f23 uses y^2 = 5), so read it off as y*y
+        // instead of hardcoding one field's choice.
+        let y = [B::ZERO, B::ZERO, B::ZERO, B::ONE, B::ZERO, B::ZERO];
+        let y2 = <B as ExtensibleField<6>>::mul(y, y);
+        debug_assert!(y2[3] == B::ZERO && y2[4] == B::ZERO && y2[5] == B::ZERO);
+        let t = CubeExtension::new(y2[0], y2[1], y2[2]);
+        let norm = (self.0 * self.0) - (t * self.1 * self.1);
         let den = norm.inv();
         Self(self.0 * den, (-self.1) * den)
     }
