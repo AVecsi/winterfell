@@ -113,9 +113,24 @@ impl TransitionConstraintDegree {
         // For example, if degree of our constraints is 6, the blowup factor would need to be 8.
         // However, if the degree is 5, the blowup factor could be as small as 4.
         //
-        // TODO: update documentation
-        let degree_bound = self.base + self.cycles.len() - 1;
+        // The constraint evaluation domain must be able to hold `C(x) / z(x)`, so it needs
+        // `deg(C) - deg(z) + 1` points, i.e. a blowup of
+        // `ceil((get_evaluation_degree() - (trace_length - 1) + 1) / trace_length_ext)`.
+        //
+        // Two things this must not do. It must not charge a periodic column a full
+        // `trace_length_ext - 1`: a column of cycle `c` contributes `(trace_length / c) * (c - 1)`,
+        // which is smaller, and over-charging demands a larger blowup factor than the computation
+        // needs. And it must not estimate the ratio as `base + cycles.len() - 1`: that assumes
+        // trace polynomials have degree `trace_length - 1`, but with zero-knowledge on they have
+        // degree `trace_length_ext - 1`, so for an odd base degree the estimate comes out one too
+        // small and the constraint evaluation domain is sized below the quotient's degree.
+        //
+        // Note this assumes a single transition exemption, as `trace_length - 1` for `deg(z)`
+        // encodes; `set_num_transition_exemptions(k)` with `k > 1` lowers `deg(z)` further and is
+        // not accounted for here.
+        let q_deg = self.get_evaluation_degree(trace_length, trace_length_ext) - (trace_length - 1);
+        let blowup_factor = (q_deg + 1).div_ceil(trace_length_ext);
 
-        cmp::max(degree_bound.next_power_of_two(), ProofOptions::MIN_BLOWUP_FACTOR)
+        cmp::max(blowup_factor.next_power_of_two(), ProofOptions::MIN_BLOWUP_FACTOR)
     }
 }
